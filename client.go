@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -25,18 +26,33 @@ const (
 
 // Client is a middleman between the websocket connection and the hub.
 type Client struct {
+	id string
+
 	// The websocket connection.
 	conn *websocket.Conn
 
 	// Buffered channel of outbound messages.
-	send chan []byte
+	send chan []byte // TODO: string?
+
+	cleanupOnce sync.Once
 }
 
-func NewClient(conn *websocket.Conn) *Client {
+func NewClient(id string, conn *websocket.Conn) *Client {
 	return &Client{
+		id:   id,
 		conn: conn,
-		send: make(chan []byte, 256),
+		send: make(chan []byte, 64),
 	}
+}
+
+// WebSocket connections support one concurrent reader and one
+// concurrent writer. The application ensures that these concurrency
+// requirements are met by executing all reads from the readPump
+// goroutine and all writes from the writePump goroutine.
+func (c *Client) Run() {
+	go c.readPump()
+	go c.writePump()
+	hub.register <- c
 }
 
 type TestMessage struct {
@@ -45,17 +61,15 @@ type TestMessage struct {
 }
 
 func (c *Client) readPump() {
-	defer func() {
-		logger.Infoln("leaving")
-		c.conn.Close()
-	}()
+	defer c.tryCleanup()
 
 	// c.conn.SetReadLimit(maxMessageSize)
 
-	// Heartbeat. Close connection if client does not respond to ping for too long.
+	// Heartbeat. Close connection if client does not respond to ping
+	// for too long.
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error {
-		logger.Info("pong")
+		logger.Debugf("receive pong id[%v]", c.id)
 		c.conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
@@ -71,7 +85,7 @@ func (c *Client) readPump() {
 			break
 		}
 
-		logger.Infoln("message: ", message)
+		logger.Infof("id[%v] message[%v]", c.id, message)
 		c.send <- []byte("received")
 	}
 }
@@ -79,11 +93,8 @@ func (c *Client) readPump() {
 func (c *Client) writePump() {
 	pingTicker := time.NewTicker(pingPeriod)
 
-	defer func() {
-		logger.Infoln("leaving")
-		pingTicker.Stop()
-		c.conn.Close()
-	}()
+	defer pingTicker.Stop()
+	defer c.tryCleanup()
 
 	for {
 		select {
@@ -104,7 +115,7 @@ func (c *Client) writePump() {
 				return
 			}
 		case <-pingTicker.C:
-			logger.Infoln("ping")
+			logger.Debugf("send ping id[%v]", c.id)
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				logger.Errorln("Ping err:", err)
@@ -112,4 +123,12 @@ func (c *Client) writePump() {
 			}
 		}
 	}
+}
+
+func (c *Client) tryCleanup() {
+	c.cleanupOnce.Do(func() {
+		logger.Debugf("cleanup id[%v]", c.id)
+		c.conn.Close()
+		hub.unregister <- c
+	})
 }

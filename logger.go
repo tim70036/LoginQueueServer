@@ -5,6 +5,10 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+var (
+	logger = NewLogger().Sugar()
+)
+
 func NewLogger() *zap.Logger {
 	// See the documentation for Config and zapcore.EncoderConfig for all the
 	// available options.

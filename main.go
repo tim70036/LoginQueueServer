@@ -9,14 +9,11 @@ import (
 	"github.com/labstack/gommon/log"
 )
 
-var (
-	upgrader = websocket.Upgrader{}
-	logger   = NewLogger().Sugar()
-)
-
 func main() {
 	defer logger.Sync()
 
+	upgrader := websocket.Upgrader{}
+	go hub.Run()
 	e := echo.New()
 
 	e.Use(middleware.RequestID())
@@ -38,27 +35,27 @@ func main() {
 	})
 
 	e.GET("/ws", func(c echo.Context) error {
-		// id := c.Response().Header().Get(echo.HeaderXRequestID)
+		id := c.Response().Header().Get(echo.HeaderXRequestID)
 		conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 		if err != nil {
 			return err
 		}
-		client := NewClient(conn)
 
-		// Allow collection of memory referenced by the caller by doing all work in
-		// new goroutines.
-		go client.writePump()
-		go client.readPump()
+		// TODO: Extract jwt and ask main server if need to place client in queue.
+		// Close connection right away if main server doesn't need to be in queue.
+
+		client := NewClient(id, conn)
+		go client.Run()
 
 		return nil
 	})
 
-	s := http.Server{
+	server := http.Server{
 		Addr:    ":8080",
 		Handler: e,
 		//ReadTimeout: 30 * time.Second, // customize http.Server timeouts
 	}
-	if err := s.ListenAndServe(); err != http.ErrServerClosed {
+	if err := server.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
 }
