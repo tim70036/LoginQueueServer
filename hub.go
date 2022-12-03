@@ -7,11 +7,15 @@ type Hub struct {
 	// Inbound messages from the clients.
 	broadcast chan []byte
 
+	unicast chan []byte
+
 	// Register requests from the clients.
 	register chan *Client
 
 	// Unregister requests from clients.
 	unregister chan *Client
+
+	requestQueue chan *Client
 }
 
 var (
@@ -39,6 +43,8 @@ func (h *Hub) Run() {
 				delete(h.clients, client)
 				close(client.send)
 			}
+		case client := <-h.requestQueue:
+
 		//The hub handles messages by looping over the registered
 		//clients and sending the message to the client's send
 		//channel. If the client's send buffer is full, then the
@@ -51,6 +57,7 @@ func (h *Hub) Run() {
 				select {
 				case client.send <- message:
 				default:
+					logger.Warnf("id[%v] send channel is full, closing it", client.id)
 					close(client.send)
 					delete(h.clients, client)
 				}

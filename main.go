@@ -14,8 +14,8 @@ func main() {
 
 	upgrader := websocket.Upgrader{}
 	go hub.Run()
-	e := echo.New()
 
+	e := echo.New()
 	e.Use(middleware.RequestID())
 	e.Use(middleware.Recover())
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
@@ -43,6 +43,9 @@ func main() {
 
 		// TODO: Extract jwt and ask main server if need to place client in queue.
 		// Close connection right away if main server doesn't need to be in queue.
+		// 1. queue is disabled
+		// 2. main server online user number < threshold
+		// 3. client jwt's last heartbeat < 5 min or in game
 
 		client := NewClient(id, conn)
 		go client.Run()

@@ -55,6 +55,16 @@ func (c *Client) Run() {
 	hub.register <- c
 }
 
+// Try cleanup before the client is closed. Note that cleanup action
+// will only be performed once to avoid undesired side effect.
+func (c *Client) tryCleanup() {
+	c.cleanupOnce.Do(func() {
+		logger.Debugf("cleanup id[%v]", c.id)
+		c.conn.Close()
+		hub.unregister <- c
+	})
+}
+
 type TestMessage struct {
 	EventId   int    `json:"eventId`
 	EventData string `json:"eventData`
@@ -65,8 +75,9 @@ func (c *Client) readPump() {
 
 	// c.conn.SetReadLimit(maxMessageSize)
 
-	// Heartbeat. Close connection if client does not respond to ping
-	// for too long.
+	// Heartbeat. Set read timeout if client does not respond to ping
+	// for too long. This will in turn make conn.ReadMessage get an io
+	// timeout error and thus closing the connection.
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error {
 		logger.Debugf("receive pong id[%v]", c.id)
@@ -123,12 +134,4 @@ func (c *Client) writePump() {
 			}
 		}
 	}
-}
-
-func (c *Client) tryCleanup() {
-	c.cleanupOnce.Do(func() {
-		logger.Debugf("cleanup id[%v]", c.id)
-		c.conn.Close()
-		hub.unregister <- c
-	})
 }
