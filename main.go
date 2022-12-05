@@ -14,6 +14,7 @@ func main() {
 
 	upgrader := websocket.Upgrader{}
 	go hub.Run()
+	go queue.Run()
 
 	e := echo.New()
 	e.Use(middleware.RequestID())
@@ -35,7 +36,7 @@ func main() {
 	})
 
 	e.GET("/ws", func(c echo.Context) error {
-		id := c.Response().Header().Get(echo.HeaderXRequestID)
+		ticketId := c.Request().Header.Get("ticketId")
 		conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 		if err != nil {
 			return err
@@ -47,7 +48,7 @@ func main() {
 		// 2. main server online user number < threshold
 		// 3. client jwt's last heartbeat < 5 min or in game
 
-		client := NewClient(id, conn)
+		client := NewClient(ticketId, conn)
 		go client.Run()
 
 		return nil

@@ -15,10 +15,10 @@ const (
 	maxMessageSize = 8192
 
 	// Send pings to peer with this period.
-	pingPeriod = 5 * time.Second
+	pingInterval = 30 * time.Second
 
 	// Time allowed to read the next pong message from the peer.
-	pongWait = pingPeriod * 5 / 2
+	pongWait = pingInterval * 5 / 2
 
 	// Time to wait before force close on connection.
 	closeGracePeriod = 10 * time.Second
@@ -26,7 +26,7 @@ const (
 
 // Client is a middleman between the websocket connection and the hub.
 type Client struct {
-	id string
+	ticketId string
 
 	// The websocket connection.
 	conn *websocket.Conn
@@ -37,11 +37,11 @@ type Client struct {
 	cleanupOnce sync.Once
 }
 
-func NewClient(id string, conn *websocket.Conn) *Client {
+func NewClient(ticketId string, conn *websocket.Conn) *Client {
 	return &Client{
-		id:   id,
-		conn: conn,
-		send: make(chan []byte, 64),
+		ticketId: ticketId,
+		conn:     conn,
+		send:     make(chan []byte, 64),
 	}
 }
 
@@ -59,7 +59,7 @@ func (c *Client) Run() {
 // will only be performed once to avoid undesired side effect.
 func (c *Client) tryCleanup() {
 	c.cleanupOnce.Do(func() {
-		logger.Debugf("cleanup id[%v]", c.id)
+		logger.Debugf("cleanup id[%v]", c.ticketId)
 		c.conn.Close()
 		hub.unregister <- c
 	})
@@ -80,7 +80,7 @@ func (c *Client) readPump() {
 	// timeout error and thus closing the connection.
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error {
-		logger.Debugf("receive pong id[%v]", c.id)
+		logger.Debugf("receive pong id[%v]", c.ticketId)
 		c.conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
@@ -96,13 +96,13 @@ func (c *Client) readPump() {
 			break
 		}
 
-		logger.Infof("id[%v] message[%v]", c.id, message)
+		logger.Infof("id[%v] message[%v]", c.ticketId, message)
 		c.send <- []byte("received")
 	}
 }
 
 func (c *Client) writePump() {
-	pingTicker := time.NewTicker(pingPeriod)
+	pingTicker := time.NewTicker(pingInterval)
 
 	defer pingTicker.Stop()
 	defer c.tryCleanup()
@@ -126,7 +126,7 @@ func (c *Client) writePump() {
 				return
 			}
 		case <-pingTicker.C:
-			logger.Debugf("send ping id[%v]", c.id)
+			logger.Debugf("send ping id[%v]", c.ticketId)
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				logger.Errorln("Ping err:", err)

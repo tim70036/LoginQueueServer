@@ -20,10 +20,10 @@ func NewLogger() *zap.Logger {
 		ErrorOutputPaths: []string{"stderr"},
 		EncoderConfig: zapcore.EncoderConfig{
 			// Keys can be anything except the empty string.
-			TimeKey:        "time",
-			LevelKey:       "level",
-			NameKey:        "name",
-			CallerKey:      "caller",
+			TimeKey:  "time",
+			LevelKey: "level",
+			NameKey:  "name",
+			// CallerKey:      "caller",
 			FunctionKey:    "function",
 			MessageKey:     "message",
 			StacktraceKey:  "stacktrace",

@@ -1,13 +1,13 @@
 package main
 
+import "github.com/emirpasic/gods/maps/hashmap"
+
 type Hub struct {
 	// Registered clients.
-	clients map[*Client]bool // TODO uid as key?
+	clients *hashmap.Map
 
 	// Inbound messages from the clients.
 	broadcast chan []byte
-
-	unicast chan []byte
 
 	// Register requests from the clients.
 	register chan *Client
@@ -15,7 +15,7 @@ type Hub struct {
 	// Unregister requests from clients.
 	unregister chan *Client
 
-	requestQueue chan *Client
+	finishQueue chan string
 }
 
 var (
@@ -24,10 +24,11 @@ var (
 
 func NewHub() *Hub {
 	return &Hub{
-		broadcast:  make(chan []byte),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		clients:    make(map[*Client]bool),
+		broadcast:   make(chan []byte),
+		register:    make(chan *Client),
+		unregister:  make(chan *Client),
+		finishQueue: make(chan string),
+		clients:     hashmap.New(),
 	}
 }
 
@@ -35,31 +36,40 @@ func (h *Hub) Run() {
 	for {
 		select {
 		case client := <-h.register:
-			logger.Debugf("register id[%v]", client.id)
-			h.clients[client] = true
+			logger.Debugf("register client ticketId[%v]", client.ticketId)
+			h.clients.Put(client.ticketId, client)
+			queue.enter <- client.ticketId
 		case client := <-h.unregister:
-			logger.Debugf("unregister id[%v]", client.id)
-			if _, ok := h.clients[client]; ok {
-				delete(h.clients, client)
+			logger.Debugf("unregister client ticketId[%v]", client.ticketId)
+			if _, doesExist := h.clients.Get(client.ticketId); doesExist {
+				h.clients.Remove(client.ticketId)
+				queue.leave <- client.ticketId
 				close(client.send)
 			}
-		case client := <-h.requestQueue:
-
+		case ticketId := <-h.finishQueue:
+			logger.Debugf("finish queue ticketId[%v]", ticketId)
+			if value, doesExist := h.clients.Get(ticketId); doesExist {
+				client := value.(*Client)
+				client.send <- []byte("finish queue")
+				// TODO, close client?
+			}
 		//The hub handles messages by looping over the registered
 		//clients and sending the message to the client's send
 		//channel. If the client's send buffer is full, then the
 		//hub assumes that the client is dead or stuck. In this
-		//case, the hub unregisters the client and closes the
+		//case, the hub unregisters the client and closehashashmap
 		//websocket.
 		case message := <-h.broadcast:
 			logger.Debugf("broadcast message[%v]", message)
-			for client := range h.clients {
+			for _, value := range h.clients.Values() {
+				client := value.(*Client)
 				select {
 				case client.send <- message:
 				default:
-					logger.Warnf("id[%v] send channel is full, closing it", client.id)
+					logger.Warnf("id[%v] send channel is full, closing it", client.ticketId)
+					h.clients.Remove(client.ticketId)
+					queue.leave <- client.ticketId
 					close(client.send)
-					delete(h.clients, client)
 				}
 			}
 		}
