@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"game-soul-technology/joker/joker-login-queue-server/msg"
 	"sync"
 	"time"
 
@@ -65,11 +67,6 @@ func (c *Client) tryCleanup() {
 	})
 }
 
-type TestMessage struct {
-	EventId   int    `json:"eventId`
-	EventData string `json:"eventData`
-}
-
 func (c *Client) readPump() {
 	defer c.tryCleanup()
 
@@ -96,8 +93,16 @@ func (c *Client) readPump() {
 			break
 		}
 
-		logger.Infof("id[%v] message[%v]", c.ticketId, message)
-		c.send <- []byte("received")
+		var wsMessage *msg.WsMessage
+		err = json.Unmarshal(message, wsMessage)
+		if err != nil {
+			logger.Errorf("ticketId[%v] message[%s] %v", c.ticketId, message, err)
+			continue
+		}
+		logger.Infof("received msg ticketId[%v] eventCode[%v]", c.ticketId, wsMessage.EventCode)
+
+		// TODO: message handle based on eventCode... in hub?
+		c.send <- []byte("123")
 	}
 }
 
@@ -109,7 +114,7 @@ func (c *Client) writePump() {
 
 	for {
 		select {
-		case message, ok := <-c.send:
+		case _, ok := <-c.send:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
 				// The hub closed the channel.
@@ -117,11 +122,22 @@ func (c *Client) writePump() {
 				return
 			}
 
-			shit := &TestMessage{
-				EventId:   1,
-				EventData: string(message),
+			event := &msg.EnterRequestClientEvent{
+				Platform: "android",
 			}
-			if err := c.conn.WriteJSON(shit); err != nil {
+
+			rawEvent, err := json.Marshal(event)
+			if err != nil {
+				logger.Errorf("event[%v] %v", event, err)
+				continue
+			}
+
+			wsMessage := &msg.WsMessage{
+				EventCode: event.EventCode(),
+				EventData: rawEvent,
+			}
+
+			if err := c.conn.WriteJSON(wsMessage); err != nil {
 				logger.Errorln("WriteJSON err:", err)
 				return
 			}

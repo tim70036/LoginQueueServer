@@ -26,9 +26,7 @@ const (
 )
 
 type Stats struct {
-	onlineUsers          uint
-	onlineUsersThreshold uint
-	activeTickets        uint
+	activeTickets uint
 	// avgWaitDuration      time.Duration
 }
 
@@ -100,7 +98,7 @@ func (q *Queue) QueueWorker() {
 			// ignore him. Maybe we will just skip him until next
 			// ticker.
 			logger.Debugf("dequeueing")
-			slots := q.stats.onlineUsersThreshold - q.stats.onlineUsers // race condition?
+			slots := config.GetFreeSlots()
 
 			it := q.ticketQueue.Iterator()
 			for it.Begin(); it.Next() && slots > 0; {
@@ -139,9 +137,6 @@ func (q *Queue) StatsWorker() {
 	for {
 		select {
 		case <-ticker.C:
-			q.stats.onlineUsers = 1
-			q.stats.onlineUsersThreshold = 2
-
 			q.stats.activeTickets = 0
 			for _, value := range q.ticketQueue.Values() {
 				ticket := value.(*Ticket)
@@ -152,6 +147,7 @@ func (q *Queue) StatsWorker() {
 
 			logger.Infof("stats updated [%+v]", q.stats)
 
+			// TODO: remove this.
 			var ticketData string
 			it := q.ticketQueue.Iterator()
 			for it.Begin(); it.Next(); {
