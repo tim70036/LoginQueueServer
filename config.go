@@ -15,6 +15,7 @@ var (
 )
 
 const (
+	// Update config with this interval.
 	configUpdateInterval = 10 * time.Second
 )
 

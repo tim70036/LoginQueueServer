@@ -13,6 +13,7 @@ func main() {
 	defer logger.Sync()
 
 	upgrader := websocket.Upgrader{}
+	go config.Run()
 	go hub.Run()
 	go queue.Run()
 
@@ -48,7 +49,7 @@ func main() {
 		// 2. main server online user number < threshold
 		// 3. client jwt's last heartbeat < 5 min or in game
 
-		client := NewClient(ticketId, conn)
+		client := NewClient(TicketId(ticketId), conn)
 		go client.Run()
 
 		return nil

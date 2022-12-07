@@ -8,9 +8,21 @@ import (
 )
 
 type Queue struct {
-	enter chan string
-	leave chan string
+	// Enter queue request for a ticket from hub.
+	enter chan TicketId
 
+	// Leave queue request for a ticket from hub. Will set ticket in
+	// queue to inactive.
+	leave chan TicketId
+
+	// A queue of tickets. A ticket can be active or inactive in
+	// queue. Only active tickets can be dequeued, inactive tickets is
+	// left in it. If an inactive ticket stays inactive for too long,
+	// it will be viewed as stale and removed from the queue. It's
+	// implemented as linkedhasmap since we want to find ticket
+	// frequntly through ticketId, but at the same time we want to
+	// record the insert order of the ticket so we can correctly
+	// dequeue. Key value: ticketId -> ticket.
 	ticketQueue *linkedhashmap.Map
 	stats       *Stats
 }
@@ -32,8 +44,8 @@ type Stats struct {
 
 func NewQueue() *Queue {
 	return &Queue{
-		enter:       make(chan string, 1024), // need buffer?
-		leave:       make(chan string, 1024),
+		enter:       make(chan TicketId, 1024), // need buffer?
+		leave:       make(chan TicketId, 1024),
 		ticketQueue: linkedhashmap.New(),
 		stats:       &Stats{},
 	}
@@ -83,13 +95,15 @@ func (q *Queue) QueueWorker() {
 
 		case ticketId := <-q.leave:
 			logger.Debugf("leave ticketId[%+v]", ticketId)
-			var ticket *Ticket
-			if value, doesExist := q.ticketQueue.Get(ticketId); doesExist {
-				ticket = value.(*Ticket)
-				ticket.isActive = false
-				ticket.inactiveTime = time.Now()
-				logger.Infof("set inactive ticket[%+v]", ticket)
+			value, ok := q.ticketQueue.Get(ticketId)
+			if !ok {
+				continue
 			}
+
+			ticket := value.(*Ticket)
+			ticket.isActive = false
+			ticket.inactiveTime = time.Now()
+			logger.Infof("set inactive ticket[%+v]", ticket)
 
 		case <-ticker.C:
 			// Dequeue the first n tickets that is active, skip
@@ -102,7 +116,7 @@ func (q *Queue) QueueWorker() {
 
 			it := q.ticketQueue.Iterator()
 			for it.Begin(); it.Next() && slots > 0; {
-				ticketId, ticket := it.Key().(string), it.Value().(*Ticket)
+				ticketId, ticket := it.Key().(TicketId), it.Value().(*Ticket)
 				if !ticket.isActive {
 					continue
 				}

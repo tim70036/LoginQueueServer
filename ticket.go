@@ -2,10 +2,18 @@ package main
 
 import "time"
 
+type TicketId string
+
 type Ticket struct {
-	ticketId     string
-	isActive     bool
-	createTime   time.Time
+	ticketId TicketId
+	isActive bool
+
+	// The time when ticket is created.
+	createTime time.Time
+
+	// The most recent time the ticket starts become inactive. If it's
+	// default value, then it means this ticket has never been
+	// inactive.
 	inactiveTime time.Time
 }
 

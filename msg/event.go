@@ -1,21 +1,25 @@
 package msg
 
-type WsEvent interface {
-	EventCode() uint
+type EventCode uint
+
+const (
+	LoginCode       EventCode = 0
+	FinishQueueCode EventCode = 1
+	QueueStatusCode EventCode = 2
+	NoQueueCode     EventCode = 3
+)
+
+type LoginClientEvent struct {
+	Platform   string `json:"platform"` // enum?
+	Credential string `json:"credential"`
 }
 
-func (e *EnterRequestClientEvent) EventCode() uint { return 1 }
-func (e *FinishQueueServerEvent) EventCode() uint  { return 2 }
-func (e *QueueStatusServerEvent) EventCode() uint  { return 3 }
-
-type EnterRequestClientEvent struct {
-	Platform   string `json:"platform` // enum?
-	Credential string `json:"credential`
-}
-
-type FinishQueueServerEvent struct {
-	Dummy string
+type LoginServerEvent struct {
+	Jwt string `json:"jwt"`
 }
 
 type QueueStatusServerEvent struct {
+}
+
+type NoQueueServerEvent struct {
 }
