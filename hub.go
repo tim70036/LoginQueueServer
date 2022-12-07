@@ -145,5 +145,5 @@ func (h *Hub) Run() {
 func (h *Hub) removeClient(client *Client) {
 	h.clients.Remove(client.ticketId)
 	h.loginReqCache.Remove(client.ticketId)
-	client.TryClose(false) // Notify client: it should close now.
+	client.TryClose(false) // Notify client it should close now.
 }
