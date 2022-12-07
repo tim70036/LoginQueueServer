@@ -7,15 +7,20 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/gommon/log"
+	"go.uber.org/zap/zapcore"
 )
 
 func main() {
 	defer logger.Sync()
 
+	// TODO: DI
 	upgrader := websocket.Upgrader{}
 	go config.Run()
 	go hub.Run()
 	go queue.Run()
+
+	// TODO: remove this
+	loggerLevel.SetLevel(zapcore.DebugLevel)
 
 	e := echo.New()
 	e.Use(middleware.RequestID())
@@ -34,6 +39,18 @@ func main() {
 
 	e.GET("/", func(c echo.Context) error {
 		return c.String(http.StatusOK, "Hello, World!\n")
+	})
+
+	e.PUT("/debug", func(c echo.Context) error {
+		loggerLevel.SetLevel(zapcore.DebugLevel)
+		logger.Info("debug logging enabled")
+		return c.NoContent(http.StatusOK)
+	})
+
+	e.DELETE("/debug", func(c echo.Context) error {
+		loggerLevel.SetLevel(zapcore.InfoLevel)
+		logger.Info("debug logging disabled")
+		return c.NoContent(http.StatusOK)
 	})
 
 	e.GET("/ws", func(c echo.Context) error {

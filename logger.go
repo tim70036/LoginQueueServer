@@ -7,13 +7,16 @@ import (
 
 var (
 	logger = NewLogger().Sugar()
+
+	// Allow changing log level at run time.
+	loggerLevel = zap.NewAtomicLevelAt(zapcore.InfoLevel)
 )
 
 func NewLogger() *zap.Logger {
 	// See the documentation for Config and zapcore.EncoderConfig for all the
 	// available options.
 	var cfg = zap.Config{
-		Level:            zap.NewAtomicLevelAt(zapcore.DebugLevel),
+		Level:            loggerLevel,
 		Development:      false,
 		Encoding:         "console",
 		OutputPaths:      []string{"stderr"},

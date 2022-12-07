@@ -58,6 +58,7 @@ func (h *Hub) Run() {
 		case client := <-h.register:
 			logger.Debugf("register client ticketId[%v]", client.ticketId)
 			h.clients.Put(client.ticketId, client)
+
 		case client := <-h.unregister:
 			logger.Debugf("unregister client ticketId[%v]", client.ticketId)
 
@@ -67,7 +68,7 @@ func (h *Hub) Run() {
 			}
 
 			queue.leave <- client.ticketId
-			h.closeClient(client)
+			h.removeClient(client)
 
 		case ticketId := <-h.finishQueue:
 			logger.Debugf("finish queue ticketId[%v]", ticketId)
@@ -94,12 +95,12 @@ func (h *Hub) Run() {
 				continue
 			}
 
-			client.send <- &msg.WsMessage{
+			client.sendWsMessage <- &msg.WsMessage{
 				EventCode: msg.LoginCode,
 				EventData: rawEvent,
 			}
 
-			h.closeClient(client)
+			h.removeClient(client)
 
 		case req := <-h.request:
 			switch req.wsMessage.EventCode {
@@ -141,8 +142,8 @@ func (h *Hub) Run() {
 	}
 }
 
-func (h *Hub) closeClient(client *Client) {
+func (h *Hub) removeClient(client *Client) {
 	h.clients.Remove(client.ticketId)
 	h.loginReqCache.Remove(client.ticketId)
-	close(client.send)
+	client.TryClose(false) // Notify client: it should close now.
 }

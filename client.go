@@ -18,6 +18,8 @@ const (
 
 	// Time allowed to read the next pong message from the peer.
 	pongWait = pingInterval * 5 / 2
+
+	closeGracePeriod = 3 * time.Second
 )
 
 // Client is a middleman between the websocket connection and the hub.
@@ -30,16 +32,22 @@ type Client struct {
 	conn *websocket.Conn
 
 	// Buffered channel of outbound messages.
-	send chan *msg.WsMessage
+	sendWsMessage chan *msg.WsMessage
 
-	cleanupOnce sync.Once
+	sendClose chan []byte
+
+	close chan struct{}
+
+	closeOnce sync.Once
 }
 
 func NewClient(ticketId TicketId, conn *websocket.Conn) *Client {
 	return &Client{
-		ticketId: ticketId,
-		conn:     conn,
-		send:     make(chan *msg.WsMessage, 64),
+		ticketId:      ticketId,
+		conn:          conn,
+		sendWsMessage: make(chan *msg.WsMessage, 64),
+		sendClose:     make(chan []byte, 64),
+		close:         make(chan struct{}),
 	}
 }
 
@@ -53,13 +61,19 @@ func (c *Client) Run() {
 	hub.register <- c
 }
 
-// Try cleanup before the client is closed. Note that cleanup action
-// will only be performed once to avoid undesired side effect.
-func (c *Client) tryCleanup() {
-	c.cleanupOnce.Do(func() {
-		logger.Debugf("cleanup id[%v]", c.ticketId)
-		hub.unregister <- c // TODO: should not run if hub close it?
-		time.Sleep(5 * time.Second)
+func (c *Client) TryClose(isClosedByClient bool) {
+	// Do nothing if client is already in the process of closing.
+	c.closeOnce.Do(func() {
+		if isClosedByClient {
+			// Notify hub before disconnect.
+			hub.unregister <- c
+		} else {
+			// Notify client before close connection
+			c.sendClose <- websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Closed by server")
+			time.Sleep(closeGracePeriod) // Ensure that close message is sent.
+		}
+
+		close(c.close)
 		c.conn.Close()
 	})
 }
@@ -67,8 +81,6 @@ func (c *Client) tryCleanup() {
 // Infinite loop that read message from ws connection. Also, detect
 // connection liveness by listening to pong message.
 func (c *Client) recvLoop() {
-	defer c.tryCleanup()
-
 	// Heartbeat. Set read timeout if client does not respond to ping
 	// for too long. This will in turn make conn.ReadMessage get an io
 	// timeout error and thus closing the connection.
@@ -83,11 +95,16 @@ func (c *Client) recvLoop() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			// TODO
+			// Closed due to:
+			// 1. hub close, thus sendLoop close conn -> attempt to read from closed conn
+			// 2. client disconnect -> ?
+			// 3. heartbeat timeout -> read IO timeout
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				logger.Errorln("error: ", err)
 			} else {
-				logger.Infoln("read closing: ", err)
+				logger.Errorln("read closing: ", err)
 			}
+			c.TryClose(true)
 			return
 		}
 
@@ -110,24 +127,24 @@ func (c *Client) recvLoop() {
 // periodically send ping to connection and expect it to return pong.
 func (c *Client) sendLoop() {
 	pingTicker := time.NewTicker(pingInterval)
-
 	defer pingTicker.Stop()
-	defer c.tryCleanup()
 
 	for {
 		select {
-		case wsMessage, ok := <-c.send:
+		case wsMessage := <-c.sendWsMessage:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if !ok {
-				// The hub closed the channel.
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{}) // TODO: not working.
-				return
-			}
-
 			if err := c.conn.WriteJSON(wsMessage); err != nil {
 				logger.Errorf("cannot write json to ws conn %v", err)
 				continue
 			}
+		case closeMessage := <-c.sendClose:
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.conn.WriteMessage(websocket.CloseMessage, closeMessage); err != nil {
+				logger.Errorf("cannot write close message to ws conn %v", err)
+				continue
+			}
+		case <-c.close:
+			return
 		case <-pingTicker.C:
 			logger.Debugf("send ping id[%v]", c.ticketId)
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
