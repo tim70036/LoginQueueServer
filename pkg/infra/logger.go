@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	Logger = NewLogger().Sugar()
+	BaseLogger = NewLogger()
 
 	// Allow changing log level at run time.
 	LoggerLevel = zap.NewAtomicLevelAt(zapcore.InfoLevel)
@@ -27,7 +27,7 @@ func NewLogger() *zap.Logger {
 			LevelKey: "level",
 			NameKey:  "name",
 			// CallerKey:      "caller",
-			FunctionKey:    "function",
+			// FunctionKey:    "function",
 			MessageKey:     "message",
 			StacktraceKey:  "stacktrace",
 			LineEnding:     zapcore.DefaultLineEnding,

@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	. "game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/msg"
 
 	"github.com/emirpasic/gods/maps/hashmap"
@@ -57,11 +56,11 @@ func (h *Hub) Run() {
 	for {
 		select {
 		case client := <-h.register:
-			Logger.Debugf("register client ticketId[%v]", client.ticketId)
+			logger.Debugf("register client ticketId[%v]", client.ticketId)
 			h.clients.Put(client.ticketId, client)
 
 		case client := <-h.unregister:
-			Logger.Debugf("unregister client ticketId[%v]", client.ticketId)
+			logger.Debugf("unregister client ticketId[%v]", client.ticketId)
 
 			_, ok := h.clients.Get(client.ticketId)
 			if !ok {
@@ -72,17 +71,17 @@ func (h *Hub) Run() {
 			h.removeClient(client)
 
 		case ticketId := <-h.finishQueue:
-			Logger.Debugf("finish queue ticketId[%v]", ticketId)
+			logger.Debugf("finish queue ticketId[%v]", ticketId)
 			value, ok := h.clients.Get(ticketId)
 			if !ok {
-				Logger.Warnf("finish queue but cannot find client for ticketId[%v]", ticketId)
+				logger.Warnf("finish queue but cannot find client for ticketId[%v]", ticketId)
 				continue
 			}
 			client := value.(*Client)
 
 			value, ok = h.loginReqCache.Get(ticketId)
 			if !ok {
-				Logger.Warnf("finish queue but cannot find login request info for ticketId[%v]", ticketId)
+				logger.Warnf("finish queue but cannot find login request info for ticketId[%v]", ticketId)
 				continue
 			}
 			// loginReq := value.(*msg.LoginClientEvent)
@@ -92,7 +91,7 @@ func (h *Hub) Run() {
 				Jwt: "8787",
 			})
 			if err != nil {
-				Logger.Errorf("cannot marshal LoginServerEvent %v", err)
+				logger.Errorf("cannot marshal LoginServerEvent %v", err)
 				continue
 			}
 
@@ -109,16 +108,16 @@ func (h *Hub) Run() {
 				event := &msg.LoginClientEvent{}
 				err := json.Unmarshal(req.wsMessage.EventData, event)
 				if err != nil {
-					Logger.Errorf("ticketId[%v] %v", req.client.ticketId, err)
+					logger.Errorf("ticketId[%v] %v", req.client.ticketId, err)
 					continue
 				}
 
-				Logger.Debugf("storing event[%+v] into loginReqCache", event)
+				logger.Debugf("storing event[%+v] into loginReqCache", event)
 				h.loginReqCache.Put(req.client.ticketId, event)
 				queue.enter <- req.client.ticketId
 
 			default:
-				Logger.Errorf("ticketId[%v] invalid eventCode[%v]", req.client.ticketId, req.wsMessage.EventCode)
+				logger.Errorf("ticketId[%v] invalid eventCode[%v]", req.client.ticketId, req.wsMessage.EventCode)
 			}
 			//The hub handles messages by looping over the registered
 			//clients and sending the message to the client's send

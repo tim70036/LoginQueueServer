@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	. "game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"time"
 
 	"github.com/emirpasic/gods/maps/linkedhashmap"
@@ -33,9 +32,9 @@ var (
 )
 
 const (
-	statsUpdateInterval = 10 * time.Second
+	statsUpdateInterval = 15 * time.Second
 
-	dequeueInterval = 10 * time.Second
+	dequeueInterval = 15 * time.Second
 )
 
 type Stats struct {
@@ -57,6 +56,7 @@ func (q *Queue) Run() {
 	go q.StatsWorker()
 }
 
+// Don't need lock on ticket and queue since we're in same goroutine.
 func (q *Queue) QueueWorker() {
 	ticker := time.NewTicker(dequeueInterval)
 	defer ticker.Stop()
@@ -65,11 +65,10 @@ func (q *Queue) QueueWorker() {
 	// have to consider multiple login queue worker is reading redis
 	// queue.
 
-	// Don't need lock on ticket and queue since we're in same goroutine.
 	for {
 		select {
 		case ticketId := <-q.enter:
-			Logger.Debugf("enter ticketId[%+v]", ticketId)
+			logger.Debugf("enter ticketId[%+v]", ticketId)
 			var ticket *Ticket
 			if value, doesExist := q.ticketQueue.Get(ticketId); doesExist {
 				// Skip for ticket that's already in queue. Remove it
@@ -78,11 +77,11 @@ func (q *Queue) QueueWorker() {
 				ticket = value.(*Ticket)
 				if !ticket.IsStale() {
 					ticket.isActive = true
-					Logger.Infof("set back to active ticket[%+v]", ticket)
+					logger.Infof("set back to active ticket[%+v]", ticket)
 					continue
 				}
 				q.ticketQueue.Remove(ticket.ticketId)
-				Logger.Infof("removed stale ticket[%+v]", ticket)
+				logger.Infof("removed stale ticket[%+v]", ticket)
 			}
 
 			// If not exist, create a ticket.
@@ -92,10 +91,10 @@ func (q *Queue) QueueWorker() {
 				createTime: time.Now(),
 			}
 			q.ticketQueue.Put(ticketId, ticket)
-			Logger.Infof("inserted new ticket[%+v]", ticket)
+			logger.Infof("inserted new ticket[%+v]", ticket)
 
 		case ticketId := <-q.leave:
-			Logger.Debugf("leave ticketId[%+v]", ticketId)
+			logger.Debugf("leave ticketId[%+v]", ticketId)
 			value, ok := q.ticketQueue.Get(ticketId)
 			if !ok {
 				continue
@@ -104,7 +103,7 @@ func (q *Queue) QueueWorker() {
 			ticket := value.(*Ticket)
 			ticket.isActive = false
 			ticket.inactiveTime = time.Now()
-			Logger.Infof("set inactive ticket[%+v]", ticket)
+			logger.Infof("set inactive ticket[%+v]", ticket)
 
 		case <-ticker.C:
 			// Dequeue the first n tickets that is active, skip
@@ -112,7 +111,7 @@ func (q *Queue) QueueWorker() {
 			// stale, should we wait for him to come back or just
 			// ignore him. Maybe we will just skip him until next
 			// ticker.
-			Logger.Debugf("dequeueing")
+			logger.Debugf("dequeueing")
 			slots := cfg.GetFreeSlots()
 
 			it := q.ticketQueue.Iterator()
@@ -122,21 +121,24 @@ func (q *Queue) QueueWorker() {
 					continue
 				}
 
-				Logger.Infof("dequeue slots[%+v] ticket[%+v]", slots, ticket)
+				logger.Infof("dequeue slots[%+v] ticket[%+v]", slots, ticket)
 				q.ticketQueue.Remove(ticketId)
 				hub.finishQueue <- ticketId
 				slots--
 			}
 
 			// Remove staled ticket from pool
-			Logger.Debugf("removing stale ticket")
+			logger.Debugf("removing stale ticket")
 			for it.Begin(); it.Next(); {
 				ticketId, ticket := it.Key(), it.Value().(*Ticket)
 				if ticket.IsStale() {
 					q.ticketQueue.Remove(ticketId) // TODO: will this change data structure??
-					Logger.Infof("removed stale ticket[%+v]", ticket)
+					logger.Infof("removed stale ticket[%+v]", ticket)
 				}
 			}
+
+			// TODO: remove this.
+			q.dumpQueue()
 		}
 	}
 }
@@ -159,17 +161,17 @@ func (q *Queue) StatsWorker() {
 					q.stats.activeTickets++
 				}
 			}
-
-			Logger.Infof("stats updated [%+v]", q.stats)
-
-			// TODO: remove this.
-			var ticketData string
-			it := q.ticketQueue.Iterator()
-			for it.Begin(); it.Next(); {
-				_, ticket := it.Key(), it.Value().(*Ticket)
-				ticketData = ticketData + fmt.Sprintf("ticket[%+v]\n", ticket)
-			}
-			Logger.Debugf("ticketQueue:\n\n" + ticketData + "\n\n")
+			logger.Infof("stats updated [%+v]", q.stats)
 		}
 	}
+}
+
+func (q *Queue) dumpQueue() {
+	var ticketData string
+	it := q.ticketQueue.Iterator()
+	for it.Begin(); it.Next(); {
+		_, ticket := it.Key(), it.Value().(*Ticket)
+		ticketData = ticketData + fmt.Sprintf("ticket[%+v]\n", ticket)
+	}
+	logger.Debugf("ticketQueue:\n\n" + ticketData + "\n\n")
 }

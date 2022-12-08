@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	. "game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/msg"
 	"net"
 	"sync"
@@ -89,7 +88,7 @@ func (c *Client) recvLoop() {
 	// timeout error and thus closing the connection.
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error {
-		Logger.Debugf("receive pong id[%v]", c.ticketId)
+		logger.Debugf("receive pong id[%v]", c.ticketId)
 		c.conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
@@ -98,11 +97,11 @@ func (c *Client) recvLoop() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-				Logger.Debugf("recv normal close message")
+				logger.Debugf("recv normal close message")
 			} else if err, ok := err.(net.Error); ok && err.Timeout() {
-				Logger.Warnf("recv timeout %v", err) // Possibly heartbeat timeout.
+				logger.Warnf("recv timeout %v", err) // Possibly heartbeat timeout.
 			} else {
-				Logger.Errorf("recv error %v", err)
+				logger.Errorf("recv error %v", err)
 			}
 
 			c.TryClose(true)
@@ -112,10 +111,10 @@ func (c *Client) recvLoop() {
 		wsMessage := &msg.WsMessage{}
 		err = json.Unmarshal(message, wsMessage)
 		if err != nil {
-			Logger.Errorf("ticketId[%v] message[%s] %v", c.ticketId, message, err)
+			logger.Errorf("ticketId[%v] message[%s] %v", c.ticketId, message, err)
 			continue
 		}
-		Logger.Debugf("received msg ticketId[%v] eventCode[%v]", c.ticketId, wsMessage.EventCode)
+		logger.Debugf("received msg ticketId[%v] eventCode[%v]", c.ticketId, wsMessage.EventCode)
 
 		hub.request <- &ClientRequest{
 			client:    c,
@@ -135,7 +134,7 @@ func (c *Client) sendLoop() {
 		case wsMessage := <-c.sendWsMessage:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteJSON(wsMessage); err != nil {
-				Logger.Errorf("cannot write json to ws conn %v", err)
+				logger.Errorf("cannot write json to ws conn %v", err)
 				continue
 			}
 		case closeMessage := <-c.close:
@@ -145,14 +144,14 @@ func (c *Client) sendLoop() {
 
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.CloseMessage, closeMessage); err != nil {
-				Logger.Errorf("cannot write close message to ws conn %v", err)
+				logger.Errorf("cannot write close message to ws conn %v", err)
 			}
 			return
 		case <-pingTicker.C:
-			Logger.Debugf("send ping id[%v]", c.ticketId)
+			logger.Debugf("send ping id[%v]", c.ticketId)
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				Logger.Errorf("cannot send ping to ws conn", err)
+				logger.Errorf("cannot send ping to ws conn", err)
 				continue
 			}
 		}

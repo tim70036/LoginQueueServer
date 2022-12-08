@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	. "game-soul-technology/joker/joker-login-queue-server/pkg/infra"
+	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/msg"
 	"net/http"
 
@@ -15,13 +15,14 @@ import (
 
 var (
 	wsUpgrader = websocket.Upgrader{}
+	logger     = infra.BaseLogger.Sugar()
 )
 
 func main() {
-	defer Logger.Sync()
+	defer logger.Sync()
 
 	// TODO: remove this
-	LoggerLevel.SetLevel(zapcore.DebugLevel)
+	infra.LoggerLevel.SetLevel(zapcore.DebugLevel)
 
 	// TODO: DI
 	go cfg.Run()
@@ -38,7 +39,7 @@ func main() {
 		LogRequestID: true,
 		LogStatus:    true,
 		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
-			Logger.Infof("%v %v id[%v] status[%v] latency[%vms]\n", v.Method, v.URI, v.RequestID, v.Status, v.Latency.Milliseconds())
+			logger.Infof("%v %v id[%v] status[%v] latency[%vms]\n", v.Method, v.URI, v.RequestID, v.Status, v.Latency.Milliseconds())
 			return nil
 		},
 	}))
@@ -48,14 +49,14 @@ func main() {
 	})
 
 	e.PUT("/debug", func(c echo.Context) error {
-		LoggerLevel.SetLevel(zapcore.DebugLevel)
-		Logger.Info("debug logging enabled")
+		infra.LoggerLevel.SetLevel(zapcore.DebugLevel)
+		logger.Info("debug logging enabled")
 		return c.NoContent(http.StatusOK)
 	})
 
 	e.DELETE("/debug", func(c echo.Context) error {
-		LoggerLevel.SetLevel(zapcore.InfoLevel)
-		Logger.Info("debug logging disabled")
+		infra.LoggerLevel.SetLevel(zapcore.InfoLevel)
+		logger.Info("debug logging disabled")
 		return c.NoContent(http.StatusOK)
 	})
 
@@ -86,18 +87,18 @@ func handleWs(c echo.Context) error {
 	if !cfg.IsQueueEnabled {
 		rawEvent, err := json.Marshal(nil)
 		if err != nil {
-			Logger.Errorf("cannot marshal NoQueueServerEvent %v", err)
+			logger.Errorf("cannot marshal NoQueueServerEvent %v", err)
 		}
 		wsMessage := &msg.WsMessage{
 			EventCode: msg.NoQueueCode,
 			EventData: rawEvent,
 		}
 		if err := conn.WriteJSON(wsMessage); err != nil {
-			Logger.Errorf("cannot write json to ws conn %v", err)
+			logger.Errorf("cannot write json to ws conn %v", err)
 		}
 
 		if err := conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseTryAgainLater, "No need queue")); err != nil {
-			Logger.Errorf("cannot write close message to ws conn %v", err)
+			logger.Errorf("cannot write close message to ws conn %v", err)
 		}
 		conn.Close()
 		return nil

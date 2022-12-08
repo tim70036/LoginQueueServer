@@ -16,7 +16,7 @@ func init() {
 		Password: "", // no password set
 		DB:       0,  // use default DB
 		OnConnect: func(ctx context.Context, cn *redis.Conn) error {
-			Logger.Infof("redis connected")
+			BaseLogger.Info("redis connected")
 			return nil
 		},
 	})
