@@ -2,7 +2,8 @@ package main
 
 import (
 	"encoding/json"
-	"game-soul-technology/joker/joker-login-queue-server/msg"
+	. "game-soul-technology/joker/joker-login-queue-server/pkg/infra"
+	"game-soul-technology/joker/joker-login-queue-server/pkg/msg"
 
 	"github.com/emirpasic/gods/maps/hashmap"
 )
@@ -56,11 +57,11 @@ func (h *Hub) Run() {
 	for {
 		select {
 		case client := <-h.register:
-			logger.Debugf("register client ticketId[%v]", client.ticketId)
+			Logger.Debugf("register client ticketId[%v]", client.ticketId)
 			h.clients.Put(client.ticketId, client)
 
 		case client := <-h.unregister:
-			logger.Debugf("unregister client ticketId[%v]", client.ticketId)
+			Logger.Debugf("unregister client ticketId[%v]", client.ticketId)
 
 			_, ok := h.clients.Get(client.ticketId)
 			if !ok {
@@ -71,17 +72,17 @@ func (h *Hub) Run() {
 			h.removeClient(client)
 
 		case ticketId := <-h.finishQueue:
-			logger.Debugf("finish queue ticketId[%v]", ticketId)
+			Logger.Debugf("finish queue ticketId[%v]", ticketId)
 			value, ok := h.clients.Get(ticketId)
 			if !ok {
-				logger.Warnf("finish queue but cannot find client for ticketId[%v]", ticketId)
+				Logger.Warnf("finish queue but cannot find client for ticketId[%v]", ticketId)
 				continue
 			}
 			client := value.(*Client)
 
 			value, ok = h.loginReqCache.Get(ticketId)
 			if !ok {
-				logger.Warnf("finish queue but cannot find login request info for ticketId[%v]", ticketId)
+				Logger.Warnf("finish queue but cannot find login request info for ticketId[%v]", ticketId)
 				continue
 			}
 			// loginReq := value.(*msg.LoginClientEvent)
@@ -91,7 +92,7 @@ func (h *Hub) Run() {
 				Jwt: "8787",
 			})
 			if err != nil {
-				logger.Errorf("cannot marshal LoginServerEvent %v", err)
+				Logger.Errorf("cannot marshal LoginServerEvent %v", err)
 				continue
 			}
 
@@ -108,16 +109,16 @@ func (h *Hub) Run() {
 				event := &msg.LoginClientEvent{}
 				err := json.Unmarshal(req.wsMessage.EventData, event)
 				if err != nil {
-					logger.Errorf("ticketId[%v] %v", req.client.ticketId, err)
+					Logger.Errorf("ticketId[%v] %v", req.client.ticketId, err)
 					continue
 				}
 
-				logger.Debugf("storing event[%+v] into loginReqCache", event)
+				Logger.Debugf("storing event[%+v] into loginReqCache", event)
 				h.loginReqCache.Put(req.client.ticketId, event)
 				queue.enter <- req.client.ticketId
 
 			default:
-				logger.Errorf("ticketId[%v] invalid eventCode[%v]", req.client.ticketId, req.wsMessage.EventCode)
+				Logger.Errorf("ticketId[%v] invalid eventCode[%v]", req.client.ticketId, req.wsMessage.EventCode)
 			}
 			//The hub handles messages by looping over the registered
 			//clients and sending the message to the client's send
@@ -126,13 +127,13 @@ func (h *Hub) Run() {
 			//case, the hub unregisters the client and closehashashmap
 			//websocket.
 			// case message := <-h.broadcast:
-			// 	logger.Debugf("broadcast message[%v]", message)
+			// 	Logger.Debugf("broadcast message[%v]", message)
 			// 	for _, value := range h.clients.Values() {
 			// 		client := value.(*Client)
 			// 		select {
 			// 		case client.send <- message:
 			// 		default:
-			// 			logger.Warnf("id[%v] send channel is full, closing it", client.ticketId)
+			// 			Logger.Warnf("id[%v] send channel is full, closing it", client.ticketId)
 			// 			h.clients.Remove(client.ticketId)
 			// 			queue.leave <- client.ticketId
 			// 			close(client.send)

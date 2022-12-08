@@ -1,4 +1,4 @@
-package main
+package infra
 
 import (
 	"go.uber.org/zap"
@@ -6,17 +6,17 @@ import (
 )
 
 var (
-	logger = NewLogger().Sugar()
+	Logger = NewLogger().Sugar()
 
 	// Allow changing log level at run time.
-	loggerLevel = zap.NewAtomicLevelAt(zapcore.InfoLevel)
+	LoggerLevel = zap.NewAtomicLevelAt(zapcore.InfoLevel)
 )
 
 func NewLogger() *zap.Logger {
 	// See the documentation for Config and zapcore.EncoderConfig for all the
 	// available options.
 	var cfg = zap.Config{
-		Level:            loggerLevel,
+		Level:            LoggerLevel,
 		Development:      false,
 		Encoding:         "console",
 		OutputPaths:      []string{"stderr"},

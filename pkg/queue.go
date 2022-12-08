@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	. "game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"time"
 
 	"github.com/emirpasic/gods/maps/linkedhashmap"
@@ -68,7 +69,7 @@ func (q *Queue) QueueWorker() {
 	for {
 		select {
 		case ticketId := <-q.enter:
-			logger.Debugf("enter ticketId[%+v]", ticketId)
+			Logger.Debugf("enter ticketId[%+v]", ticketId)
 			var ticket *Ticket
 			if value, doesExist := q.ticketQueue.Get(ticketId); doesExist {
 				// Skip for ticket that's already in queue. Remove it
@@ -77,11 +78,11 @@ func (q *Queue) QueueWorker() {
 				ticket = value.(*Ticket)
 				if !ticket.IsStale() {
 					ticket.isActive = true
-					logger.Infof("set back to active ticket[%+v]", ticket)
+					Logger.Infof("set back to active ticket[%+v]", ticket)
 					continue
 				}
 				q.ticketQueue.Remove(ticket.ticketId)
-				logger.Infof("removed stale ticket[%+v]", ticket)
+				Logger.Infof("removed stale ticket[%+v]", ticket)
 			}
 
 			// If not exist, create a ticket.
@@ -91,10 +92,10 @@ func (q *Queue) QueueWorker() {
 				createTime: time.Now(),
 			}
 			q.ticketQueue.Put(ticketId, ticket)
-			logger.Infof("inserted new ticket[%+v]", ticket)
+			Logger.Infof("inserted new ticket[%+v]", ticket)
 
 		case ticketId := <-q.leave:
-			logger.Debugf("leave ticketId[%+v]", ticketId)
+			Logger.Debugf("leave ticketId[%+v]", ticketId)
 			value, ok := q.ticketQueue.Get(ticketId)
 			if !ok {
 				continue
@@ -103,7 +104,7 @@ func (q *Queue) QueueWorker() {
 			ticket := value.(*Ticket)
 			ticket.isActive = false
 			ticket.inactiveTime = time.Now()
-			logger.Infof("set inactive ticket[%+v]", ticket)
+			Logger.Infof("set inactive ticket[%+v]", ticket)
 
 		case <-ticker.C:
 			// Dequeue the first n tickets that is active, skip
@@ -111,8 +112,8 @@ func (q *Queue) QueueWorker() {
 			// stale, should we wait for him to come back or just
 			// ignore him. Maybe we will just skip him until next
 			// ticker.
-			logger.Debugf("dequeueing")
-			slots := config.GetFreeSlots()
+			Logger.Debugf("dequeueing")
+			slots := cfg.GetFreeSlots()
 
 			it := q.ticketQueue.Iterator()
 			for it.Begin(); it.Next() && slots > 0; {
@@ -121,19 +122,19 @@ func (q *Queue) QueueWorker() {
 					continue
 				}
 
-				logger.Infof("dequeue slots[%+v] ticket[%+v]", slots, ticket)
+				Logger.Infof("dequeue slots[%+v] ticket[%+v]", slots, ticket)
 				q.ticketQueue.Remove(ticketId)
 				hub.finishQueue <- ticketId
 				slots--
 			}
 
 			// Remove staled ticket from pool
-			logger.Debugf("removing stale ticket")
+			Logger.Debugf("removing stale ticket")
 			for it.Begin(); it.Next(); {
 				ticketId, ticket := it.Key(), it.Value().(*Ticket)
 				if ticket.IsStale() {
 					q.ticketQueue.Remove(ticketId) // TODO: will this change data structure??
-					logger.Infof("removed stale ticket[%+v]", ticket)
+					Logger.Infof("removed stale ticket[%+v]", ticket)
 				}
 			}
 		}
@@ -159,7 +160,7 @@ func (q *Queue) StatsWorker() {
 				}
 			}
 
-			logger.Infof("stats updated [%+v]", q.stats)
+			Logger.Infof("stats updated [%+v]", q.stats)
 
 			// TODO: remove this.
 			var ticketData string
@@ -168,7 +169,7 @@ func (q *Queue) StatsWorker() {
 				_, ticket := it.Key(), it.Value().(*Ticket)
 				ticketData = ticketData + fmt.Sprintf("ticket[%+v]\n", ticket)
 			}
-			logger.Debugf("ticketQueue:\n\n" + ticketData + "\n\n")
+			Logger.Debugf("ticketQueue:\n\n" + ticketData + "\n\n")
 		}
 	}
 }
