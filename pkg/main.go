@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/msg"
 	"net/http"
+	"os"
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
@@ -63,10 +65,11 @@ func main() {
 	e.GET("/ws", handleWs)
 
 	server := http.Server{
-		Addr:    ":8080",
+		Addr:    fmt.Sprintf(":%v", os.Getenv("SERVER_PORT")),
 		Handler: e,
 		//ReadTimeout: 30 * time.Second, // customize http.Server timeouts
 	}
+	logger.Infof("server starts listening on port[%v]", os.Getenv("SERVER_PORT"))
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatal(err)
 	}

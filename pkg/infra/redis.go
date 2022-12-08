@@ -2,6 +2,8 @@ package infra
 
 import (
 	"context"
+	"os"
+	"strconv"
 
 	"github.com/go-redis/redis/v8"
 )
@@ -11,12 +13,17 @@ var (
 )
 
 func init() {
+	redisDb, err := strconv.Atoi(os.Getenv("REDIS_DB"))
+	if err != nil {
+		BaseLogger.Sugar().Errorf("invalid redis db %v", err)
+		return
+	}
+
 	RedisClient = redis.NewClient(&redis.Options{
-		Addr:     "localhost:8787",
-		Password: "", // no password set
-		DB:       0,  // use default DB
+		Addr: os.Getenv("REDIS_HOST"),
+		DB:   redisDb,
 		OnConnect: func(ctx context.Context, cn *redis.Conn) error {
-			BaseLogger.Info("redis connected")
+			BaseLogger.Sugar().Infof("redis connected to host[%v] db[%v]", os.Getenv("REDIS_HOST"), redisDb)
 			return nil
 		},
 	})

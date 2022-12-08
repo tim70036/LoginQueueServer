@@ -1,0 +1,22 @@
+services:
+  joker-login-queue-server:
+    build: .
+    environment:
+      REDIS_HOST: ${REDIS_HOST:?err}
+      REDIS_DB: ${REDIS_DB:?err}
+      SERVER_PORT: ${SERVER_PORT:?err}
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '5'
+        compress: 'true'
+    ports:
+      - ${SERVER_PORT:?err}:${SERVER_PORT:?err}
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
