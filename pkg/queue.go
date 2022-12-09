@@ -19,8 +19,10 @@ type Queue struct {
 	// Notify hub that a ticket is done queueing.
 	notifyFinish chan TicketId
 
-	notifyTicket chan *Ticket
+	// Notify a ticket has changed its status.
+	notifyDirtyTicket chan *Ticket
 
+	// Notify current stats of the queue.
 	notifyStats chan *Stats
 
 	// A queue of tickets. A ticket can be active or inactive in
@@ -39,7 +41,8 @@ type Queue struct {
 }
 
 const (
-	dequeueInterval = 15 * time.Second
+	notifyStatsInterval = 5 * time.Second
+	dequeueInterval     = 15 * time.Second
 )
 
 type Stats struct {
@@ -53,22 +56,27 @@ type Stats struct {
 
 func ProvideQueue(config *Config) *Queue {
 	return &Queue{
-		enter:        make(chan TicketId, 1024),
-		leave:        make(chan TicketId, 1024),
-		notifyFinish: make(chan TicketId, 1024),
-		notifyTicket: make(chan *Ticket, 1024),
-		notifyStats:  make(chan *Stats, 1024),
-		ticketQueue:  linkedhashmap.New(),
-		stats:        &Stats{},
+		enter:             make(chan TicketId, 1024),
+		leave:             make(chan TicketId, 1024),
+		notifyFinish:      make(chan TicketId, 1024),
+		notifyDirtyTicket: make(chan *Ticket, 1024),
+		notifyStats:       make(chan *Stats, 1024),
+		ticketQueue:       linkedhashmap.New(),
+		stats:             &Stats{},
 
 		config: config,
 	}
 }
 
+func (q *Queue) Run() {
+	go q.queueWorker()
+	go q.statsWorker()
+}
+
 // Don't need lock on ticket and queue since only have 1 goroutine
 // that will access them. Scaling is way harder. If use redis, have to
 // consider multiple login queue worker is reading redis queue.
-func (q *Queue) Run() {
+func (q *Queue) queueWorker() {
 	ticker := time.NewTicker(dequeueInterval)
 	defer ticker.Stop()
 
@@ -84,6 +92,7 @@ func (q *Queue) Run() {
 				ticket = value.(*Ticket)
 				if !ticket.IsStale() {
 					ticket.isActive = true
+					ticket.isDirty = true
 					logger.Infof("set back to active ticket[%+v]", ticket)
 					continue
 				}
@@ -138,28 +147,36 @@ func (q *Queue) Run() {
 				logger.Infof("removed stale ticket[%+v]", ticket)
 			}
 
-			// TODO: if no changed?
-
-			// TODO: count active tickets?
-			q.stats.activeTickets = 0
-			for it.Begin(); it.Next(); {
-				_, ticket := it.Key().(TicketId), it.Value().(*Ticket)
-				if ticket.isActive {
-					q.stats.activeTickets++
-				}
-			}
-
-			// TODO: send stats to everyone. update wait time?
-			q.notifyStats <- q.stats
-
-			// TODO: send ticket status to client.
-			for it.Begin(); it.Next(); {
-				_, ticket := it.Key().(TicketId), it.Value().(*Ticket)
-				q.notifyTicket <- ticket // TODO may be only send first initial ticket. (dirty ticket)
-			}
-
 			// TODO: remove this.
-			q.dumpQueue()
+			// q.dumpQueue()
+
+			// TODO: update wait time?
+		}
+	}
+}
+
+func (q *Queue) statsWorker() {
+	ticker := time.NewTicker(notifyStatsInterval)
+	defer ticker.Stop()
+
+	for ; true; <-ticker.C {
+		q.stats.activeTickets = 0
+		it := q.ticketQueue.Iterator()
+		for it.Begin(); it.Next(); {
+			_, ticket := it.Key().(TicketId), it.Value().(*Ticket)
+			if ticket.isActive {
+				q.stats.activeTickets++
+			}
+		}
+
+		q.notifyStats <- q.stats
+
+		for it.Begin(); it.Next(); {
+			_, ticket := it.Key().(TicketId), it.Value().(*Ticket)
+			if ticket.isDirty {
+				ticket.isDirty = false
+				q.notifyDirtyTicket <- ticket
+			}
 		}
 	}
 }
@@ -174,6 +191,7 @@ func (q *Queue) push(ticketId TicketId) {
 	ticket := &Ticket{
 		ticketId:   ticketId,
 		isActive:   true,
+		isDirty:    true,
 		position:   q.stats.tailPosition,
 		createTime: time.Now(),
 	}

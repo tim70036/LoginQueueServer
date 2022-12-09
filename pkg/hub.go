@@ -98,11 +98,11 @@ func (h *Hub) handleClient() {
 func (h *Hub) handleQueue() {
 	for {
 		select {
-		case ticket := <-h.queue.notifyTicket:
-			logger.Debugf("notifyTicket ticketId[%v]", ticket.ticketId)
+		case ticket := <-h.queue.notifyDirtyTicket:
+			logger.Debugf("notifyDirtyTicket ticketId[%v]", ticket.ticketId)
 			value, ok := h.clients.Get(ticket.ticketId)
 			if !ok {
-				logger.Warnf("notifyTicket but cannot find client for ticketId[%v]", ticket.ticketId)
+				logger.Warnf("notifyDirtyTicket but cannot find client for ticketId[%v]", ticket.ticketId)
 				continue
 			}
 
