@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/emirpasic/gods/maps/linkedhashmap"
@@ -15,7 +16,12 @@ type Queue struct {
 	// queue to inactive.
 	leave chan TicketId
 
-	finish chan TicketId
+	// Notify hub that a ticket is done queueing.
+	notifyFinish chan TicketId
+
+	notifyTicket chan *Ticket
+
+	notifyStats chan *Stats
 
 	// A queue of tickets. A ticket can be active or inactive in
 	// queue. Only active tickets can be dequeued, inactive tickets is
@@ -26,48 +32,44 @@ type Queue struct {
 	// record the insert order of the ticket so we can correctly
 	// dequeue. Key value: ticketId -> ticket.
 	ticketQueue *linkedhashmap.Map
-	stats       *Stats
+
+	stats *Stats
 
 	config *Config
 }
 
 const (
-	statsUpdateInterval = 15 * time.Second
-
 	dequeueInterval = 15 * time.Second
 )
 
 type Stats struct {
 	activeTickets uint
 	// avgWaitDuration      time.Duration
+
+	headPos int64
+	tailPos int64
 }
 
 func ProvideQueue(config *Config) *Queue {
 	return &Queue{
-		enter:       make(chan TicketId, 1024), // need buffer?
-		leave:       make(chan TicketId, 1024),
-		finish:      make(chan TicketId, 1024),
-		ticketQueue: linkedhashmap.New(),
-		stats:       &Stats{},
+		enter:        make(chan TicketId, 1024),
+		leave:        make(chan TicketId, 1024),
+		notifyFinish: make(chan TicketId, 1024),
+		notifyTicket: make(chan *Ticket, 1024),
+		notifyStats:  make(chan *Stats, 1024),
+		ticketQueue:  linkedhashmap.New(),
+		stats:        &Stats{},
 
 		config: config,
 	}
 }
 
-func (q *Queue) Run() {
-	go q.QueueWorker()
-	go q.StatsWorker()
-}
-
 // Don't need lock on ticket and queue since only have 1 goroutine
-// that will access them.
-func (q *Queue) QueueWorker() {
+// that will access them. Scaling is way harder. If use redis, have to
+// consider multiple login queue worker is reading redis queue.
+func (q *Queue) Run() {
 	ticker := time.NewTicker(dequeueInterval)
 	defer ticker.Stop()
-
-	// if cannot scale, we don't need redis... scaling is way harder.
-	// have to consider multiple login queue worker is reading redis
-	// queue.
 
 	for {
 		select {
@@ -88,13 +90,9 @@ func (q *Queue) QueueWorker() {
 				logger.Infof("removed stale ticket[%+v]", ticket)
 			}
 
-			// If not exist, create a ticket.
-			ticket = &Ticket{
-				ticketId:   ticketId,
-				isActive:   true,
-				createTime: time.Now(),
-			}
-			q.ticketQueue.Put(ticketId, ticket)
+			// TODO: send ticket status to client. (for everycase, hey http api?) or just let hub read it.
+
+			q.push(ticketId)
 			logger.Infof("inserted new ticket[%+v]", ticket)
 
 		case ticketId := <-q.leave:
@@ -111,12 +109,11 @@ func (q *Queue) QueueWorker() {
 
 		case <-ticker.C:
 			// Dequeue the first n tickets that is active, skip
-			// inactive. A fucking case: if client is inactive and not
-			// stale, should we wait for him to come back or just
-			// ignore him. Maybe we will just skip him until next
-			// ticker.
-			logger.Debugf("dequeueing")
+			// inactive. If client is inactive and not stale, we will
+			// just skip him until next ticker. If he never comes
+			// back, will be removed due to stale.
 			slots := q.config.GetFreeSlots()
+			logger.Infof("dequeueing with slots[%v]", slots)
 
 			it := q.ticketQueue.Iterator()
 			for it.Begin(); it.Next() && slots > 0; {
@@ -125,21 +122,25 @@ func (q *Queue) QueueWorker() {
 					continue
 				}
 
-				logger.Infof("dequeue slots[%+v] ticket[%+v]", slots, ticket)
-				q.ticketQueue.Remove(ticketId)
-				q.finish <- ticketId
+				q.pop(ticketId)
+				q.notifyFinish <- ticketId
 				slots--
+				logger.Infof("dequeue ticket[%+v]", ticket)
 			}
 
 			// Remove staled ticket from pool
-			logger.Debugf("removing stale ticket")
+			logger.Infof("removing stale tickets")
 			for it.Begin(); it.Next(); {
-				ticketId, ticket := it.Key(), it.Value().(*Ticket)
-				if ticket.IsStale() {
-					q.ticketQueue.Remove(ticketId) // TODO: will this change data structure??
-					logger.Infof("removed stale ticket[%+v]", ticket)
+				ticketId, ticket := it.Key().(TicketId), it.Value().(*Ticket)
+				if !ticket.IsStale() {
+					continue
 				}
+
+				q.pop(ticketId)
+				logger.Infof("removed stale ticket[%+v]", ticket)
 			}
+
+			// TODO: send stats to everyone. update wait time?
 
 			// TODO: remove this.
 			q.dumpQueue()
@@ -147,26 +148,29 @@ func (q *Queue) QueueWorker() {
 	}
 }
 
-func (q *Queue) StatsWorker() {
-	// TODO: for testing
-	time.Sleep(3 * time.Second)
+func (q *Queue) push(ticketId TicketId) {
+	if q.stats.tailPos < math.MaxInt64 {
+		q.stats.tailPos += 1
+	} else {
+		q.stats.tailPos = 1
+	}
 
-	ticker := time.NewTicker(statsUpdateInterval)
-	defer ticker.Stop()
+	ticket := &Ticket{
+		ticketId:   ticketId,
+		isActive:   true,
+		pos:        q.stats.tailPos,
+		createTime: time.Now(),
+	}
+	q.ticketQueue.Put(ticketId, ticket)
+}
 
-	// Ask main server how many ticket can go.
-	for {
-		select {
-		case <-ticker.C:
-			q.stats.activeTickets = 0
-			for _, value := range q.ticketQueue.Values() {
-				ticket := value.(*Ticket)
-				if ticket.isActive {
-					q.stats.activeTickets++
-				}
-			}
-			logger.Infof("stats updated [%+v]", q.stats)
-		}
+func (q *Queue) pop(ticketId TicketId) {
+	q.ticketQueue.Remove(ticketId)
+
+	if q.stats.headPos < math.MaxInt64 {
+		q.stats.headPos += 1
+	} else {
+		q.stats.headPos = 1
 	}
 }
 

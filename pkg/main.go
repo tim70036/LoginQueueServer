@@ -15,7 +15,7 @@ func main() {
 
 	// TODO: remove this
 	infra.LoggerLevel.SetLevel(zapcore.DebugLevel)
-	infra.HttpClient.EnableDumpAll()
+	// infra.HttpClient.EnableDumpAll()
 
 	server := Setup()
 	server.Run()

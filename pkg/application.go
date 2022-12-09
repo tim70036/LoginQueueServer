@@ -30,6 +30,7 @@ func (a *Application) Run() {
 	go a.queue.Run()
 }
 
+// TODO: make client factory.
 func (a *Application) HandleWs(c echo.Context) error {
 	conn, err := a.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {

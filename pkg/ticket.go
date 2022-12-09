@@ -6,7 +6,11 @@ type TicketId string
 
 type Ticket struct {
 	ticketId TicketId
+
+	// True if client ws connection is still open. otherwise, false.
 	isActive bool
+
+	pos int64
 
 	// The time when ticket is created.
 	createTime time.Time

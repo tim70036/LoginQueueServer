@@ -55,7 +55,7 @@ func (h *Hub) Run() {
 	for {
 		select {
 		case client := <-h.register:
-			logger.Debugf("register client ticketId[%v]", client.ticketId)
+			logger.Debugf("register client ticketId[%v] ip[%v]", client.ticketId, client.ip)
 			h.clients.Put(client.ticketId, client)
 
 		case client := <-h.unregister:
@@ -87,7 +87,7 @@ func (h *Hub) Run() {
 				logger.Errorf("ticketId[%v] invalid eventCode[%v]", req.client.ticketId, req.wsMessage.EventCode)
 			}
 
-		case ticketId := <-h.queue.finish:
+		case ticketId := <-h.queue.notifyFinish:
 			logger.Debugf("finish queue ticketId[%v]", ticketId)
 			value, ok := h.clients.Get(ticketId)
 			if !ok {
@@ -189,6 +189,7 @@ func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, client *Client, re
 		return
 	}
 
+	logger.Infof("login success for ticketId[%v]", client.ticketId)
 	result <- authData.Data.Jwt
 }
 
