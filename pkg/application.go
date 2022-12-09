@@ -43,10 +43,7 @@ func (a *Application) HandleWs(c echo.Context) error {
 	// 2. client jwt's last heartbeat < 5 min or in game
 	// 3. main server under maintenance
 	if !a.config.IsQueueEnabled {
-		rawEvent, err := json.Marshal(nil)
-		if err != nil {
-			logger.Errorf("cannot marshal NoQueueServerEvent %v", err)
-		}
+		rawEvent, _ := json.Marshal(nil)
 		wsMessage := &msg.WsMessage{
 			EventCode: msg.NoQueueCode,
 			EventData: rawEvent,

@@ -2,7 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/msg"
+	"os"
 
 	"github.com/emirpasic/gods/maps/hashmap"
 )
@@ -17,7 +20,7 @@ type Hub struct {
 	clients *hashmap.Map
 
 	// Stores login request from clients. Key value: client.ticketId -> client.
-	loginReqCache *hashmap.Map
+	loginDataCache *hashmap.Map
 
 	// Inbound messages from the clients.
 	broadcast chan []byte
@@ -34,14 +37,10 @@ type Hub struct {
 	queue *Queue
 }
 
-// var (
-// 	hub = ProvideHub()
-// )
-
 func ProvideHub(queue *Queue) *Hub {
 	return &Hub{
-		clients:       hashmap.New(),
-		loginReqCache: hashmap.New(),
+		clients:        hashmap.New(),
+		loginDataCache: hashmap.New(),
 
 		broadcast:  make(chan []byte, 1024),
 		register:   make(chan *Client, 1024),
@@ -79,28 +78,16 @@ func (h *Hub) Run() {
 			}
 			client := value.(*Client)
 
-			value, ok = h.loginReqCache.Get(ticketId)
+			value, ok = h.loginDataCache.Get(ticketId)
 			if !ok {
 				logger.Warnf("finish queue but cannot find login request info for ticketId[%v]", ticketId)
 				continue
 			}
-			// loginReq := value.(*msg.LoginClientEvent)
-			// TODO: login for client
+			loginData := value.(*msg.LoginClientEvent)
 
-			rawEvent, err := json.Marshal(&msg.LoginServerEvent{
-				Jwt: "8787",
-			})
-			if err != nil {
-				logger.Errorf("cannot marshal LoginServerEvent %v", err)
-				continue
-			}
-
-			client.sendWsMessage <- &msg.WsMessage{
-				EventCode: msg.LoginCode,
-				EventData: rawEvent,
-			}
-
-			h.removeClient(client)
+			authResult := make(chan string)
+			go h.loginForClient(loginData, authResult)
+			go h.sendClientToLogin(client, authResult)
 
 		case req := <-h.request:
 			switch req.wsMessage.EventCode {
@@ -113,7 +100,7 @@ func (h *Hub) Run() {
 				}
 
 				logger.Debugf("storing event[%+v] into loginReqCache", event)
-				h.loginReqCache.Put(req.client.ticketId, event)
+				h.loginDataCache.Put(req.client.ticketId, event)
 				h.queue.enter <- req.client.ticketId
 
 			default:
@@ -143,7 +130,85 @@ func (h *Hub) Run() {
 }
 
 func (h *Hub) removeClient(client *Client) {
+	// TOOD: add lock
 	h.clients.Remove(client.ticketId)
-	h.loginReqCache.Remove(client.ticketId)
+	h.loginDataCache.Remove(client.ticketId)
 	client.TryClose(false) // Notify client it should close now.
+}
+
+func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, result chan<- string) {
+	defer close(result)
+
+	var (
+		url     string = os.Getenv("MAIN_SERVER_HOST") + "/api/user/authorization"
+		payload string
+	)
+	switch loginData.Type {
+	case "apple":
+		url += "/apple"
+		payload = fmt.Sprintf(`{"accessToken":"%v"}`, loginData.Token)
+	case "device":
+		url += "/device"
+		payload = fmt.Sprintf(`{"uniqueId":"%v"}`, loginData.Token)
+	case "facebook":
+		url += "/facebook"
+		payload = fmt.Sprintf(`{"token":"%v"}`, loginData.Token)
+	case "google":
+		url += "/google"
+		payload = fmt.Sprintf(`{"token":"%v"}`, loginData.Token)
+	case "line":
+		url += "/line"
+		payload = fmt.Sprintf(`{"accessToken":"%v"}`, loginData.Token)
+	default:
+		logger.Errorf("invalid login type[%v]", loginData.Type)
+		return
+	}
+
+	authData := &struct {
+		Data struct {
+			Jwt string `json:"jwt"`
+		} `json:"data"`
+	}{}
+
+	resp, err := infra.HttpClient.R().
+		SetHeader("Content-Type", "application/json").
+		SetHeader("platform", "Android"). // TODO
+		SetBody(payload).
+		SetResult(authData).
+		Post(url)
+
+	if err != nil {
+		logger.Errorf("request failed %v", err)
+		return
+	}
+
+	if resp.IsError() {
+		logger.Errorf("request failed with status[%v]", resp.Status)
+		return
+	}
+
+	result <- authData.Data.Jwt
+}
+
+func (h *Hub) sendClientToLogin(client *Client, result <-chan string) {
+	defer h.removeClient(client)
+
+	jwt, ok := <-result
+	if !ok {
+		logger.Warnf("cannot get login credential from closed channel")
+		return
+	}
+
+	rawEvent, err := json.Marshal(&msg.LoginServerEvent{
+		Jwt: jwt,
+	})
+	if err != nil {
+		logger.Errorf("cannot marshal LoginServerEvent %v", err)
+		return
+	}
+
+	client.sendWsMessage <- &msg.WsMessage{
+		EventCode: msg.LoginCode,
+		EventData: rawEvent,
+	}
 }

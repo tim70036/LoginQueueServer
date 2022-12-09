@@ -38,12 +38,14 @@ func ProvideServer(application *Application) *Server {
 
 	e.PUT("/debug", func(c echo.Context) error {
 		infra.LoggerLevel.SetLevel(zapcore.DebugLevel)
+		infra.HttpClient.EnableDumpAll()
 		logger.Info("debug logging enabled")
 		return c.NoContent(http.StatusOK)
 	})
 
 	e.DELETE("/debug", func(c echo.Context) error {
 		infra.LoggerLevel.SetLevel(zapcore.InfoLevel)
+		infra.HttpClient.DisableDumpAll()
 		logger.Info("debug logging disabled")
 		return c.NoContent(http.StatusOK)
 	})

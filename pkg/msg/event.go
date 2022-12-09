@@ -10,8 +10,8 @@ const (
 )
 
 type LoginClientEvent struct {
-	Platform   string `json:"platform"` // enum?
-	Credential string `json:"credential"`
+	Type  string `json:"type"` // enum?
+	Token string `json:"token"`
 }
 
 type LoginServerEvent struct {
@@ -19,7 +19,4 @@ type LoginServerEvent struct {
 }
 
 type QueueStatusServerEvent struct {
-}
-
-type NoQueueServerEvent struct {
 }

@@ -59,7 +59,8 @@ func (q *Queue) Run() {
 	go q.StatsWorker()
 }
 
-// Don't need lock on ticket and queue since we're in same goroutine.
+// Don't need lock on ticket and queue since only have 1 goroutine
+// that will access them.
 func (q *Queue) QueueWorker() {
 	ticker := time.NewTicker(dequeueInterval)
 	defer ticker.Stop()

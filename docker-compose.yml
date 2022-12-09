@@ -5,6 +5,7 @@ services:
       REDIS_HOST: ${REDIS_HOST:?err}
       REDIS_DB: ${REDIS_DB:?err}
       SERVER_PORT: ${SERVER_PORT:?err}
+      MAIN_SERVER_HOST: ${MAIN_SERVER_HOST:?err}
     restart: unless-stopped
     logging:
       driver: json-file
