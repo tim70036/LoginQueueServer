@@ -5,8 +5,9 @@ type EventCode uint
 const (
 	LoginCode       EventCode = 0
 	FinishQueueCode EventCode = 1
-	QueueStatusCode EventCode = 2
-	NoQueueCode     EventCode = 3
+	NoQueueCode     EventCode = 2
+	QueueStatsCode  EventCode = 3
+	TicketCode      EventCode = 4
 )
 
 type LoginClientEvent struct {
@@ -18,5 +19,13 @@ type LoginServerEvent struct {
 	Jwt string `json:"jwt"`
 }
 
-type QueueStatusServerEvent struct {
+type QueueStatsServerEvent struct {
+	ActiveTickets int32 `json:"ActiveTickets"`
+	HeadPosition  int32 `json:"headPosition"`
+	TailPosition  int32 `json:"tailPosition"`
+}
+
+type TicketServerEvent struct {
+	TicketId string `json:"ticketId"`
+	Position int32  `json:"position"`
 }

@@ -52,6 +52,11 @@ func ProvideHub(queue *Queue) *Hub {
 }
 
 func (h *Hub) Run() {
+	go h.handleClient()
+	go h.handleQueue()
+}
+
+func (h *Hub) handleClient() {
 	for {
 		select {
 		case client := <-h.register:
@@ -86,19 +91,72 @@ func (h *Hub) Run() {
 			default:
 				logger.Errorf("ticketId[%v] invalid eventCode[%v]", req.client.ticketId, req.wsMessage.EventCode)
 			}
+		}
+	}
+}
+
+func (h *Hub) handleQueue() {
+	for {
+		select {
+		case ticket := <-h.queue.notifyTicket:
+			logger.Debugf("notifyTicket ticketId[%v]", ticket.ticketId)
+			value, ok := h.clients.Get(ticket.ticketId)
+			if !ok {
+				logger.Warnf("notifyTicket but cannot find client for ticketId[%v]", ticket.ticketId)
+				continue
+			}
+
+			rawEvent, err := json.Marshal(&msg.TicketServerEvent{
+				TicketId: string(ticket.ticketId),
+				Position: ticket.position,
+			})
+			if err != nil {
+				logger.Errorf("cannot marshal TicketServerEvent %v", err)
+				return
+			}
+
+			wsMessage := &msg.WsMessage{
+				EventCode: msg.TicketCode,
+				EventData: rawEvent,
+			}
+
+			client := value.(*Client)
+			client.sendWsMessage <- wsMessage
+
+		case stats := <-h.queue.notifyStats:
+			logger.Debugf("notifyStats stats[%+v]", stats)
+			rawEvent, err := json.Marshal(&msg.QueueStatsServerEvent{
+				ActiveTickets: stats.activeTickets,
+				HeadPosition:  stats.headPosition,
+				TailPosition:  stats.tailPosition,
+			})
+			if err != nil {
+				logger.Errorf("cannot marshal QueueStatsServerEvent %v", err)
+				return
+			}
+
+			wsMessage := &msg.WsMessage{
+				EventCode: msg.QueueStatsCode,
+				EventData: rawEvent,
+			}
+
+			for _, value := range h.clients.Values() {
+				client := value.(*Client)
+				client.sendWsMessage <- wsMessage
+			}
 
 		case ticketId := <-h.queue.notifyFinish:
-			logger.Debugf("finish queue ticketId[%v]", ticketId)
+			logger.Debugf("notifyFinish ticketId[%v]", ticketId)
 			value, ok := h.clients.Get(ticketId)
 			if !ok {
-				logger.Warnf("finish queue but cannot find client for ticketId[%v]", ticketId)
+				logger.Warnf("notifyFinish but cannot find client for ticketId[%v]", ticketId)
 				continue
 			}
 			client := value.(*Client)
 
 			value, ok = h.loginDataCache.Get(ticketId)
 			if !ok {
-				logger.Warnf("finish queue but cannot find login request info for ticketId[%v]", ticketId)
+				logger.Warnf("notifyFinish but cannot find login request info for ticketId[%v]", ticketId)
 				continue
 			}
 			loginData := value.(*msg.LoginClientEvent)
@@ -106,26 +164,6 @@ func (h *Hub) Run() {
 			authResult := make(chan string)
 			go h.loginForClient(loginData, client, authResult)
 			go h.finishClient(client, authResult)
-
-			//The hub handles messages by looping over the registered
-			//clients and sending the message to the client's send
-			//channel. If the client's send buffer is full, then the
-			//hub assumes that the client is dead or stuck. In this
-			//case, the hub unregisters the client and closehashashmap
-			//websocket.
-			// case message := <-h.broadcast:
-			// 	Logger.Debugf("broadcast message[%v]", message)
-			// 	for _, value := range h.clients.Values() {
-			// 		client := value.(*Client)
-			// 		select {
-			// 		case client.send <- message:
-			// 		default:
-			// 			Logger.Warnf("id[%v] send channel is full, closing it", client.ticketId)
-			// 			h.clients.Remove(client.ticketId)
-			// 			queue.leave <- client.ticketId
-			// 			close(client.send)
-			// 		}
-			// 	}
 		}
 	}
 }

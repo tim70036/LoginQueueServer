@@ -43,11 +43,12 @@ const (
 )
 
 type Stats struct {
-	activeTickets uint
-	// avgWaitDuration      time.Duration
+	activeTickets int32
+	headPosition  int32
+	tailPosition  int32
 
-	headPos int64
-	tailPos int64
+	// TODO
+	// avgWaitDuration      time.Duration
 }
 
 func ProvideQueue(config *Config) *Queue {
@@ -89,9 +90,6 @@ func (q *Queue) Run() {
 				q.ticketQueue.Remove(ticket.ticketId)
 				logger.Infof("removed stale ticket[%+v]", ticket)
 			}
-
-			// TODO: send ticket status to client. (for everycase, hey http api?) or just let hub read it.
-
 			q.push(ticketId)
 			logger.Infof("inserted new ticket[%+v]", ticket)
 
@@ -140,7 +138,25 @@ func (q *Queue) Run() {
 				logger.Infof("removed stale ticket[%+v]", ticket)
 			}
 
+			// TODO: if no changed?
+
+			// TODO: count active tickets?
+			q.stats.activeTickets = 0
+			for it.Begin(); it.Next(); {
+				_, ticket := it.Key().(TicketId), it.Value().(*Ticket)
+				if ticket.isActive {
+					q.stats.activeTickets++
+				}
+			}
+
 			// TODO: send stats to everyone. update wait time?
+			q.notifyStats <- q.stats
+
+			// TODO: send ticket status to client.
+			for it.Begin(); it.Next(); {
+				_, ticket := it.Key().(TicketId), it.Value().(*Ticket)
+				q.notifyTicket <- ticket // TODO may be only send first initial ticket. (dirty ticket)
+			}
 
 			// TODO: remove this.
 			q.dumpQueue()
@@ -149,16 +165,16 @@ func (q *Queue) Run() {
 }
 
 func (q *Queue) push(ticketId TicketId) {
-	if q.stats.tailPos < math.MaxInt64 {
-		q.stats.tailPos += 1
+	if q.stats.tailPosition < math.MaxInt32 {
+		q.stats.tailPosition += 1
 	} else {
-		q.stats.tailPos = 1
+		q.stats.tailPosition = 1
 	}
 
 	ticket := &Ticket{
 		ticketId:   ticketId,
 		isActive:   true,
-		pos:        q.stats.tailPos,
+		position:   q.stats.tailPosition,
 		createTime: time.Now(),
 	}
 	q.ticketQueue.Put(ticketId, ticket)
@@ -167,10 +183,10 @@ func (q *Queue) push(ticketId TicketId) {
 func (q *Queue) pop(ticketId TicketId) {
 	q.ticketQueue.Remove(ticketId)
 
-	if q.stats.headPos < math.MaxInt64 {
-		q.stats.headPos += 1
+	if q.stats.headPosition < math.MaxInt32 {
+		q.stats.headPosition += 1
 	} else {
-		q.stats.headPos = 1
+		q.stats.headPosition = 1
 	}
 }
 
