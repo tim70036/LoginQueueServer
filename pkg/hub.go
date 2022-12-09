@@ -32,7 +32,7 @@ type Hub struct {
 	unregister chan *Client
 
 	// Ws message from clients.
-	request chan *ClientRequest
+	wsRequest chan *ClientRequest
 
 	queue *Queue
 }
@@ -45,7 +45,7 @@ func ProvideHub(queue *Queue) *Hub {
 		broadcast:  make(chan []byte, 1024),
 		register:   make(chan *Client, 1024),
 		unregister: make(chan *Client, 1024),
-		request:    make(chan *ClientRequest, 1024),
+		wsRequest:  make(chan *ClientRequest, 1024),
 
 		queue: queue,
 	}
@@ -69,6 +69,24 @@ func (h *Hub) Run() {
 			h.queue.leave <- client.ticketId
 			h.removeClient(client)
 
+		case req := <-h.wsRequest:
+			switch req.wsMessage.EventCode {
+			case msg.LoginCode:
+				event := &msg.LoginClientEvent{}
+				err := json.Unmarshal(req.wsMessage.EventData, event)
+				if err != nil {
+					logger.Errorf("ticketId[%v] %v", req.client.ticketId, err)
+					continue
+				}
+
+				logger.Debugf("storing event[%+v] into loginReqCache", event)
+				h.loginDataCache.Put(req.client.ticketId, event)
+				h.queue.enter <- req.client.ticketId
+
+			default:
+				logger.Errorf("ticketId[%v] invalid eventCode[%v]", req.client.ticketId, req.wsMessage.EventCode)
+			}
+
 		case ticketId := <-h.queue.finish:
 			logger.Debugf("finish queue ticketId[%v]", ticketId)
 			value, ok := h.clients.Get(ticketId)
@@ -86,26 +104,9 @@ func (h *Hub) Run() {
 			loginData := value.(*msg.LoginClientEvent)
 
 			authResult := make(chan string)
-			go h.loginForClient(loginData, authResult)
-			go h.sendClientToLogin(client, authResult)
+			go h.loginForClient(loginData, client, authResult)
+			go h.finishClient(client, authResult)
 
-		case req := <-h.request:
-			switch req.wsMessage.EventCode {
-			case msg.LoginCode:
-				event := &msg.LoginClientEvent{}
-				err := json.Unmarshal(req.wsMessage.EventData, event)
-				if err != nil {
-					logger.Errorf("ticketId[%v] %v", req.client.ticketId, err)
-					continue
-				}
-
-				logger.Debugf("storing event[%+v] into loginReqCache", event)
-				h.loginDataCache.Put(req.client.ticketId, event)
-				h.queue.enter <- req.client.ticketId
-
-			default:
-				logger.Errorf("ticketId[%v] invalid eventCode[%v]", req.client.ticketId, req.wsMessage.EventCode)
-			}
 			//The hub handles messages by looping over the registered
 			//clients and sending the message to the client's send
 			//channel. If the client's send buffer is full, then the
@@ -136,7 +137,7 @@ func (h *Hub) removeClient(client *Client) {
 	client.TryClose(false) // Notify client it should close now.
 }
 
-func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, result chan<- string) {
+func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, client *Client, result chan<- string) {
 	defer close(result)
 
 	var (
@@ -170,9 +171,10 @@ func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, result chan<- stri
 		} `json:"data"`
 	}{}
 
+	// TODO hwo to send client IP
 	resp, err := infra.HttpClient.R().
 		SetHeader("Content-Type", "application/json").
-		SetHeader("platform", "Android"). // TODO
+		SetHeader("platform", client.platform).
 		SetBody(payload).
 		SetResult(authData).
 		Post(url)
@@ -190,7 +192,7 @@ func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, result chan<- stri
 	result <- authData.Data.Jwt
 }
 
-func (h *Hub) sendClientToLogin(client *Client, result <-chan string) {
+func (h *Hub) finishClient(client *Client, result <-chan string) {
 	defer h.removeClient(client)
 
 	jwt, ok := <-result

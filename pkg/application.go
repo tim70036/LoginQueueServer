@@ -31,7 +31,6 @@ func (a *Application) Run() {
 }
 
 func (a *Application) HandleWs(c echo.Context) error {
-	ticketId := c.Request().Header.Get("ticketId")
 	conn, err := a.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		return err
@@ -60,7 +59,9 @@ func (a *Application) HandleWs(c echo.Context) error {
 	}
 
 	client := &Client{
-		ticketId:      TicketId(ticketId),
+		ticketId:      TicketId(c.Request().Header.Get("ticketId")),
+		platform:      c.Request().Header.Get("platform"),
+		ip:            c.RealIP(),
 		conn:          conn,
 		sendWsMessage: make(chan *msg.WsMessage, 64),
 		close:         make(chan []byte, 1),

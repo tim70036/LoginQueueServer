@@ -29,6 +29,10 @@ type Client struct {
 	// multiple frontend sessions. Should be unique enough.
 	ticketId TicketId
 
+	platform string
+
+	ip string
+
 	// The websocket connection.
 	conn *websocket.Conn
 
@@ -109,7 +113,7 @@ func (c *Client) recvLoop() {
 		}
 		logger.Debugf("received msg ticketId[%v] eventCode[%v]", c.ticketId, wsMessage.EventCode)
 
-		c.hub.request <- &ClientRequest{
+		c.hub.wsRequest <- &ClientRequest{
 			client:    c,
 			wsMessage: wsMessage,
 		}
