@@ -1,23 +1,13 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
-	"game-soul-technology/joker/joker-login-queue-server/pkg/msg"
-	"net/http"
-	"os"
 
-	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
-	"github.com/labstack/gommon/log"
 	"go.uber.org/zap/zapcore"
 )
 
 var (
-	wsUpgrader = websocket.Upgrader{}
-	logger     = infra.BaseLogger.Sugar()
+	logger = infra.BaseLogger.Sugar()
 )
 
 func main() {
@@ -26,88 +16,6 @@ func main() {
 	// TODO: remove this
 	infra.LoggerLevel.SetLevel(zapcore.DebugLevel)
 
-	// TODO: DI
-	go cfg.Run()
-	go hub.Run()
-	go queue.Run()
-
-	e := echo.New()
-	e.Use(middleware.RequestID())
-	e.Use(middleware.Recover())
-	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
-		LogLatency:   true,
-		LogMethod:    true,
-		LogURI:       true,
-		LogRequestID: true,
-		LogStatus:    true,
-		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
-			logger.Infof("%v %v id[%v] status[%v] latency[%vms]\n", v.Method, v.URI, v.RequestID, v.Status, v.Latency.Milliseconds())
-			return nil
-		},
-	}))
-
-	e.GET("/", func(c echo.Context) error {
-		return c.String(http.StatusOK, "Hello, World!\n")
-	})
-
-	e.PUT("/debug", func(c echo.Context) error {
-		infra.LoggerLevel.SetLevel(zapcore.DebugLevel)
-		logger.Info("debug logging enabled")
-		return c.NoContent(http.StatusOK)
-	})
-
-	e.DELETE("/debug", func(c echo.Context) error {
-		infra.LoggerLevel.SetLevel(zapcore.InfoLevel)
-		logger.Info("debug logging disabled")
-		return c.NoContent(http.StatusOK)
-	})
-
-	e.GET("/ws", handleWs)
-
-	server := http.Server{
-		Addr:    fmt.Sprintf(":%v", os.Getenv("SERVER_PORT")),
-		Handler: e,
-		//ReadTimeout: 30 * time.Second, // customize http.Server timeouts
-	}
-	logger.Infof("server starts listening on port[%v]", os.Getenv("SERVER_PORT"))
-	if err := server.ListenAndServe(); err != http.ErrServerClosed {
-		log.Fatal(err)
-	}
-}
-
-func handleWs(c echo.Context) error {
-	ticketId := c.Request().Header.Get("ticketId")
-	conn, err := wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
-	if err != nil {
-		return err
-	}
-
-	// TODO: Extract jwt and ask main server if need to place client in queue.
-	// Close connection right away if main server doesn't need to be in queue.
-	// 1. queue is disabled
-	// 2. client jwt's last heartbeat < 5 min or in game
-	// 3. main server under maintenance
-	if !cfg.IsQueueEnabled {
-		rawEvent, err := json.Marshal(nil)
-		if err != nil {
-			logger.Errorf("cannot marshal NoQueueServerEvent %v", err)
-		}
-		wsMessage := &msg.WsMessage{
-			EventCode: msg.NoQueueCode,
-			EventData: rawEvent,
-		}
-		if err := conn.WriteJSON(wsMessage); err != nil {
-			logger.Errorf("cannot write json to ws conn %v", err)
-		}
-
-		if err := conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseTryAgainLater, "No need queue")); err != nil {
-			logger.Errorf("cannot write close message to ws conn %v", err)
-		}
-		conn.Close()
-		return nil
-	}
-
-	client := NewClient(TicketId(ticketId), conn)
-	go client.Run()
-	return nil
+	server := Setup()
+	server.Run()
 }

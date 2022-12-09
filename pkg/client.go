@@ -39,15 +39,8 @@ type Client struct {
 	close chan []byte
 
 	closeOnce sync.Once
-}
 
-func NewClient(ticketId TicketId, conn *websocket.Conn) *Client {
-	return &Client{
-		ticketId:      ticketId,
-		conn:          conn,
-		sendWsMessage: make(chan *msg.WsMessage, 64),
-		close:         make(chan []byte, 1),
-	}
+	hub *Hub
 }
 
 func (c *Client) Run() {
@@ -57,7 +50,7 @@ func (c *Client) Run() {
 	// all writes from the other goroutine.
 	go c.recvLoop()
 	go c.sendLoop()
-	hub.register <- c
+	c.hub.register <- c
 }
 
 func (c *Client) TryClose(isClosedByClient bool) {
@@ -69,7 +62,7 @@ func (c *Client) TryClose(isClosedByClient bool) {
 	// Do nothing if client is already in the process of closing.
 	c.closeOnce.Do(func() {
 		if isClosedByClient {
-			hub.unregister <- c
+			c.hub.unregister <- c
 			c.close <- nil
 		} else {
 			c.close <- websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Closed by server")
@@ -116,7 +109,7 @@ func (c *Client) recvLoop() {
 		}
 		logger.Debugf("received msg ticketId[%v] eventCode[%v]", c.ticketId, wsMessage.EventCode)
 
-		hub.request <- &ClientRequest{
+		c.hub.request <- &ClientRequest{
 			client:    c,
 			wsMessage: wsMessage,
 		}

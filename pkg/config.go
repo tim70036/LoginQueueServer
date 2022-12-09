@@ -12,9 +12,9 @@ type Config struct {
 	IsQueueEnabled       bool `redis:"isQueueEnabled"`
 }
 
-var (
-	cfg = &Config{}
-)
+func ProvideConfig() *Config {
+	return &Config{}
+}
 
 const (
 	// Update config with this interval.

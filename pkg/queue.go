@@ -15,6 +15,8 @@ type Queue struct {
 	// queue to inactive.
 	leave chan TicketId
 
+	finish chan TicketId
+
 	// A queue of tickets. A ticket can be active or inactive in
 	// queue. Only active tickets can be dequeued, inactive tickets is
 	// left in it. If an inactive ticket stays inactive for too long,
@@ -25,11 +27,9 @@ type Queue struct {
 	// dequeue. Key value: ticketId -> ticket.
 	ticketQueue *linkedhashmap.Map
 	stats       *Stats
-}
 
-var (
-	queue = NewQueue()
-)
+	config *Config
+}
 
 const (
 	statsUpdateInterval = 15 * time.Second
@@ -42,12 +42,15 @@ type Stats struct {
 	// avgWaitDuration      time.Duration
 }
 
-func NewQueue() *Queue {
+func ProvideQueue(config *Config) *Queue {
 	return &Queue{
 		enter:       make(chan TicketId, 1024), // need buffer?
 		leave:       make(chan TicketId, 1024),
+		finish:      make(chan TicketId, 1024),
 		ticketQueue: linkedhashmap.New(),
 		stats:       &Stats{},
+
+		config: config,
 	}
 }
 
@@ -112,7 +115,7 @@ func (q *Queue) QueueWorker() {
 			// ignore him. Maybe we will just skip him until next
 			// ticker.
 			logger.Debugf("dequeueing")
-			slots := cfg.GetFreeSlots()
+			slots := q.config.GetFreeSlots()
 
 			it := q.ticketQueue.Iterator()
 			for it.Begin(); it.Next() && slots > 0; {
@@ -123,7 +126,7 @@ func (q *Queue) QueueWorker() {
 
 				logger.Infof("dequeue slots[%+v] ticket[%+v]", slots, ticket)
 				q.ticketQueue.Remove(ticketId)
-				hub.finishQueue <- ticketId
+				q.finish <- ticketId
 				slots--
 			}
 

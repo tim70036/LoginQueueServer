@@ -4,6 +4,8 @@ go 1.19
 
 require (
 	github.com/emirpasic/gods v1.18.1
+	github.com/go-redis/redis/v8 v8.11.5
+	github.com/google/wire v0.5.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/labstack/echo/v4 v4.9.1
 	github.com/labstack/gommon v0.4.0
@@ -13,7 +15,6 @@ require (
 require (
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/go-redis/redis/v8 v8.11.5 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/mattn/go-colorable v0.1.11 // indirect
 	github.com/mattn/go-isatty v0.0.14 // indirect

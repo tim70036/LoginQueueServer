@@ -31,24 +31,24 @@ type Hub struct {
 	// Ws message from clients.
 	request chan *ClientRequest
 
-	// Queue finish notification from queue.
-	finishQueue chan TicketId
+	queue *Queue
 }
 
-var (
-	hub = NewHub()
-)
+// var (
+// 	hub = ProvideHub()
+// )
 
-func NewHub() *Hub {
+func ProvideHub(queue *Queue) *Hub {
 	return &Hub{
 		clients:       hashmap.New(),
 		loginReqCache: hashmap.New(),
 
-		broadcast:   make(chan []byte, 1024),
-		register:    make(chan *Client, 1024),
-		unregister:  make(chan *Client, 1024),
-		request:     make(chan *ClientRequest, 1024),
-		finishQueue: make(chan TicketId, 1024),
+		broadcast:  make(chan []byte, 1024),
+		register:   make(chan *Client, 1024),
+		unregister: make(chan *Client, 1024),
+		request:    make(chan *ClientRequest, 1024),
+
+		queue: queue,
 	}
 }
 
@@ -67,10 +67,10 @@ func (h *Hub) Run() {
 				continue
 			}
 
-			queue.leave <- client.ticketId
+			h.queue.leave <- client.ticketId
 			h.removeClient(client)
 
-		case ticketId := <-h.finishQueue:
+		case ticketId := <-h.queue.finish:
 			logger.Debugf("finish queue ticketId[%v]", ticketId)
 			value, ok := h.clients.Get(ticketId)
 			if !ok {
@@ -114,7 +114,7 @@ func (h *Hub) Run() {
 
 				logger.Debugf("storing event[%+v] into loginReqCache", event)
 				h.loginReqCache.Put(req.client.ticketId, event)
-				queue.enter <- req.client.ticketId
+				h.queue.enter <- req.client.ticketId
 
 			default:
 				logger.Errorf("ticketId[%v] invalid eventCode[%v]", req.client.ticketId, req.wsMessage.EventCode)
