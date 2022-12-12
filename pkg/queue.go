@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"time"
 
 	"github.com/emirpasic/gods/maps/linkedhashmap"
@@ -113,6 +112,7 @@ func (q *Queue) queueWorker() {
 			logger.Infof("dequeueing with slots[%v]", slots)
 
 			it := q.ticketQueue.Iterator()
+			var waitDurations []time.Duration
 			for it.Begin(); it.Next() && slots > 0; {
 				ticketId, ticket := it.Key().(TicketId), it.Value().(*Ticket)
 				if !ticket.isActive {
@@ -124,10 +124,8 @@ func (q *Queue) queueWorker() {
 				slots--
 
 				waitDuration := time.Since(ticket.createTime)
-				if q.stats.waitDurationQueue.Size() >= avgWaitWindowSize {
-					q.stats.waitDurationQueue.Dequeue()
-				}
-				q.stats.waitDurationQueue.Enqueue(waitDuration)
+				waitDurations = append(waitDurations, waitDuration)
+
 				logger.Infof("dequeue ticket[%+v] waitDuration[%v]", ticket, waitDuration)
 			}
 
@@ -143,8 +141,9 @@ func (q *Queue) queueWorker() {
 				logger.Infof("removed stale ticket[%+v]", ticket)
 			}
 
-			// Calculate avg wait time.
-			q.stats.updateAvgWait()
+			// Update stats.
+			q.stats.resetHeadPosition(q.ticketQueue)
+			q.stats.updateAvgWait(waitDurations)
 		}
 	}
 }
@@ -154,17 +153,9 @@ func (q *Queue) statsWorker() {
 	defer ticker.Stop()
 
 	for ; true; <-ticker.C {
-		q.stats.activeTickets = 0
-		it := q.ticketQueue.Iterator()
-		for it.Begin(); it.Next(); {
-			_, ticket := it.Key().(TicketId), it.Value().(*Ticket)
-			if ticket.isActive {
-				q.stats.activeTickets++
-			}
-		}
-
 		q.notifyStats <- q.stats
 
+		it := q.ticketQueue.Iterator()
 		for it.Begin(); it.Next(); {
 			_, ticket := it.Key().(TicketId), it.Value().(*Ticket)
 			if ticket.isDirty {
@@ -176,11 +167,7 @@ func (q *Queue) statsWorker() {
 }
 
 func (q *Queue) push(ticketId TicketId) {
-	if q.stats.tailPosition < math.MaxInt32 {
-		q.stats.tailPosition += 1
-	} else {
-		q.stats.tailPosition = 1
-	}
+	q.stats.incrTailPosition()
 
 	ticket := &Ticket{
 		ticketId:   ticketId,
@@ -196,12 +183,6 @@ func (q *Queue) push(ticketId TicketId) {
 
 func (q *Queue) pop(ticketId TicketId) {
 	q.ticketQueue.Remove(ticketId)
-
-	if q.stats.headPosition < math.MaxInt32 {
-		q.stats.headPosition += 1
-	} else {
-		q.stats.headPosition = 1
-	}
 }
 
 func (q *Queue) dumpQueue() {

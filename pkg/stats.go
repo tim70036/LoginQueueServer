@@ -1,8 +1,10 @@
 package main
 
 import (
+	"math"
 	"time"
 
+	"github.com/emirpasic/gods/maps/linkedhashmap"
 	"github.com/emirpasic/gods/queues/linkedlistqueue"
 )
 
@@ -12,28 +14,65 @@ const (
 )
 
 type Stats struct {
-	// Number of tickets that are active in the queue.
-	activeTickets int32
-
-	// Queue index, used for each ticket to deduct how many tickets
-	// are in front/back of it.
+	// Used for each ticket to deduct how many tickets are in front of
+	// it (ticket.position - headPosition).
 	headPosition int32
+
+	// Used for each ticket to deduct how many tickets are in back of
+	// it (tailPosition - ticket.position).
 	tailPosition int32
 
 	// Avg wait time for a ticket since it was inserted into the
 	// queue. Calculated by a fixed size sliding window.
-	avgWaitDuration   time.Duration
+	avgWaitDuration time.Duration
+
+	// A fixed size sliding window for calculating average wait time.
 	waitDurationQueue *linkedlistqueue.Queue
 }
 
 func ProvideStats() *Stats {
 	return &Stats{
+		headPosition: 0,
+		tailPosition: 0,
+
 		avgWaitDuration:   initAvgWaitDuration,
 		waitDurationQueue: linkedlistqueue.New(),
 	}
 }
 
-func (s *Stats) updateAvgWait() {
+func (s *Stats) incrTailPosition() {
+	if s.tailPosition < math.MaxInt32 {
+		s.tailPosition += 1
+	} else {
+		s.tailPosition = 1
+	}
+}
+
+func (s *Stats) resetHeadPosition(queue *linkedhashmap.Map) {
+	if queue.Size() <= 0 {
+		s.headPosition = s.tailPosition
+		return
+	}
+
+	it := queue.Iterator()
+	it.Begin()
+	it.Next()
+	firstTicket := it.Value().(*Ticket)
+	s.headPosition = firstTicket.position
+}
+
+func (s *Stats) updateAvgWait(waitDurations []time.Duration) {
+	if waitDurations == nil {
+		return
+	}
+
+	for _, value := range waitDurations {
+		if s.waitDurationQueue.Size() >= avgWaitWindowSize {
+			s.waitDurationQueue.Dequeue()
+		}
+		s.waitDurationQueue.Enqueue(value)
+	}
+
 	if s.waitDurationQueue.Size() <= 0 {
 		return
 	}

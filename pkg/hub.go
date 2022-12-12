@@ -126,10 +126,9 @@ func (h *Hub) handleQueue() {
 		case stats := <-h.queue.notifyStats:
 			logger.Debugf("notifyStats stats[%+v]", stats)
 			rawEvent, err := json.Marshal(&msg.QueueStatsServerEvent{
-				ActiveTickets: stats.activeTickets,
-				HeadPosition:  stats.headPosition,
-				TailPosition:  stats.tailPosition,
-				AvgWaitMsec:   stats.avgWaitDuration.Milliseconds(),
+				HeadPosition: stats.headPosition,
+				TailPosition: stats.tailPosition,
+				AvgWaitMsec:  stats.avgWaitDuration.Milliseconds(),
 			})
 			if err != nil {
 				logger.Errorf("cannot marshal QueueStatsServerEvent %v", err)

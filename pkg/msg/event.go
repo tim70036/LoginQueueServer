@@ -19,10 +19,9 @@ type LoginServerEvent struct {
 }
 
 type QueueStatsServerEvent struct {
-	ActiveTickets int32 `json:"activeTickets"`
-	HeadPosition  int32 `json:"headPosition"`
-	TailPosition  int32 `json:"tailPosition"`
-	AvgWaitMsec   int64 `json:"avgWaitMsec"`
+	HeadPosition int32 `json:"headPosition"`
+	TailPosition int32 `json:"tailPosition"`
+	AvgWaitMsec  int64 `json:"avgWaitMsec"`
 }
 
 type TicketServerEvent struct {
