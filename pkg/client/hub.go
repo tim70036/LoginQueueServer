@@ -192,19 +192,19 @@ func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, client *Client, re
 		payload string
 	)
 	switch loginData.Type {
-	case "apple":
+	case msg.AppleLogin:
 		url += "/apple"
 		payload = fmt.Sprintf(`{"accessToken":"%v"}`, loginData.Token)
-	case "device":
+	case msg.DeviceLogin:
 		url += "/device"
 		payload = fmt.Sprintf(`{"uniqueId":"%v"}`, loginData.Token)
-	case "facebook":
+	case msg.FacebookLogin:
 		url += "/facebook"
 		payload = fmt.Sprintf(`{"token":"%v"}`, loginData.Token)
-	case "google":
+	case msg.GoogleLogin:
 		url += "/google"
 		payload = fmt.Sprintf(`{"token":"%v"}`, loginData.Token)
-	case "line":
+	case msg.LineLogin:
 		url += "/line"
 		payload = fmt.Sprintf(`{"accessToken":"%v"}`, loginData.Token)
 	default:

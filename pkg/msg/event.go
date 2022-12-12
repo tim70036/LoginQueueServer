@@ -9,9 +9,19 @@ const (
 	TicketCode     EventCode = 3
 )
 
+type LoginTypeCode uint
+
+const (
+	AppleLogin    LoginTypeCode = 0
+	DeviceLogin   LoginTypeCode = 1
+	FacebookLogin LoginTypeCode = 2
+	GoogleLogin   LoginTypeCode = 3
+	LineLogin     LoginTypeCode = 4
+)
+
 type LoginClientEvent struct {
-	Type  string `json:"type"` // enum?
-	Token string `json:"token"`
+	Type  LoginTypeCode `json:"type"`
+	Token string        `json:"token"`
 }
 
 type LoginServerEvent struct {
