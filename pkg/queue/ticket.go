@@ -1,4 +1,4 @@
-package main
+package queue
 
 import "time"
 
@@ -6,17 +6,17 @@ type TicketId string
 
 type Ticket struct {
 	// BJ4
-	ticketId TicketId
+	TicketId TicketId
+
+	// Position in queue. Through this, we can know how many tickets
+	// are in the front and the back of this ticket in queue.
+	Position int32
 
 	// True if client ws connection is still open. otherwise, false.
 	isActive bool
 
 	// True if ticket data has been modified since last sent to client.
 	isDirty bool
-
-	// Position in queue. Through this, we can know how many tickets
-	// are in the front and the back of this ticket in queue.
-	position int32
 
 	// The time when ticket is created.
 	createTime time.Time

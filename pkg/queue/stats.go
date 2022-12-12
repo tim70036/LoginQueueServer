@@ -1,4 +1,4 @@
-package main
+package queue
 
 import (
 	"math"
@@ -15,16 +15,16 @@ const (
 
 type Stats struct {
 	// Used for each ticket to deduct how many tickets are in front of
-	// it (ticket.position - headPosition).
-	headPosition int32
+	// it (ticket.position - HeadPosition).
+	HeadPosition int32
 
 	// Used for each ticket to deduct how many tickets are in back of
-	// it (tailPosition - ticket.position).
-	tailPosition int32
+	// it (TailPosition - ticket.position).
+	TailPosition int32
 
 	// Avg wait time for a ticket since it was inserted into the
 	// queue. Calculated by a fixed size sliding window.
-	avgWaitDuration time.Duration
+	AvgWaitDuration time.Duration
 
 	// A fixed size sliding window for calculating average wait time.
 	waitDurationQueue *linkedlistqueue.Queue
@@ -32,25 +32,25 @@ type Stats struct {
 
 func ProvideStats() *Stats {
 	return &Stats{
-		headPosition: 0,
-		tailPosition: 0,
+		HeadPosition: 0,
+		TailPosition: 0,
 
-		avgWaitDuration:   initAvgWaitDuration,
+		AvgWaitDuration:   initAvgWaitDuration,
 		waitDurationQueue: linkedlistqueue.New(),
 	}
 }
 
 func (s *Stats) incrTailPosition() {
-	if s.tailPosition < math.MaxInt32 {
-		s.tailPosition += 1
+	if s.TailPosition < math.MaxInt32 {
+		s.TailPosition += 1
 	} else {
-		s.tailPosition = 1
+		s.TailPosition = 1
 	}
 }
 
 func (s *Stats) resetHeadPosition(queue *linkedhashmap.Map) {
 	if queue.Size() <= 0 {
-		s.headPosition = s.tailPosition
+		s.HeadPosition = s.TailPosition
 		return
 	}
 
@@ -58,7 +58,7 @@ func (s *Stats) resetHeadPosition(queue *linkedhashmap.Map) {
 	it.Begin()
 	it.Next()
 	firstTicket := it.Value().(*Ticket)
-	s.headPosition = firstTicket.position
+	s.HeadPosition = firstTicket.Position
 }
 
 func (s *Stats) updateAvgWait(waitDurations []time.Duration) {
@@ -84,6 +84,6 @@ func (s *Stats) updateAvgWait(waitDurations []time.Duration) {
 		totalWaitDuration += waitDuration
 	}
 
-	s.avgWaitDuration = totalWaitDuration / time.Duration(s.waitDurationQueue.Size())
-	logger.Infof("updated avgWaitDuration[%v]", s.avgWaitDuration)
+	s.AvgWaitDuration = totalWaitDuration / time.Duration(s.waitDurationQueue.Size())
+	logger.Infof("updated avgWaitDuration[%v]", s.AvgWaitDuration)
 }

@@ -6,14 +6,21 @@
 
 package main
 
+import (
+	"game-soul-technology/joker/joker-login-queue-server/pkg/client"
+	"game-soul-technology/joker/joker-login-queue-server/pkg/config"
+	"game-soul-technology/joker/joker-login-queue-server/pkg/queue"
+)
+
 // Injectors from wire.go:
 
 func Setup() *Server {
-	config := ProvideConfig()
-	stats := ProvideStats()
-	queue := ProvideQueue(stats, config)
-	hub := ProvideHub(queue)
-	application := ProvideApplication(config, hub, queue)
+	configConfig := config.ProvideConfig()
+	clientFactory := client.ProvideClientFactory()
+	stats := queue.ProvideStats()
+	queueQueue := queue.ProvideQueue(stats, configConfig)
+	hub := client.ProvideHub(queueQueue)
+	application := ProvideApplication(configConfig, clientFactory, hub, queueQueue)
 	server := ProvideServer(application)
 	return server
 }

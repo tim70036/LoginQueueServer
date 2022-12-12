@@ -1,9 +1,13 @@
-package main
+package config
 
 import (
 	"context"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"time"
+)
+
+var (
+	logger = infra.BaseLogger.Sugar()
 )
 
 type Config struct {

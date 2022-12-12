@@ -1,7 +1,9 @@
-package main
+package queue
 
 import (
 	"fmt"
+	"game-soul-technology/joker/joker-login-queue-server/pkg/config"
+	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"time"
 
 	"github.com/emirpasic/gods/maps/linkedhashmap"
@@ -12,22 +14,26 @@ const (
 	dequeueInterval     = 15 * time.Second
 )
 
+var (
+	logger = infra.BaseLogger.Sugar()
+)
+
 type Queue struct {
 	// Enter queue request for a ticket from hub.
-	enter chan TicketId
+	Enter chan TicketId
 
 	// Leave queue request for a ticket from hub. Will set ticket in
 	// queue to inactive.
-	leave chan TicketId
+	Leave chan TicketId
 
 	// Notify hub that a ticket is done queueing.
-	notifyFinish chan TicketId
+	NotifyFinish chan TicketId
 
 	// Notify a ticket has changed its status.
-	notifyDirtyTicket chan *Ticket
+	NotifyDirtyTicket chan *Ticket
 
 	// Notify current stats of the queue.
-	notifyStats chan *Stats
+	NotifyStats chan *Stats
 
 	// A queue of tickets. A ticket can be active or inactive in
 	// queue. Only active tickets can be dequeued, inactive tickets is
@@ -41,16 +47,16 @@ type Queue struct {
 
 	stats *Stats
 
-	config *Config
+	config *config.Config
 }
 
-func ProvideQueue(stats *Stats, config *Config) *Queue {
+func ProvideQueue(stats *Stats, config *config.Config) *Queue {
 	return &Queue{
-		enter:             make(chan TicketId, 1024),
-		leave:             make(chan TicketId, 1024),
-		notifyFinish:      make(chan TicketId, 1024),
-		notifyDirtyTicket: make(chan *Ticket, 1024),
-		notifyStats:       make(chan *Stats, 1024),
+		Enter:             make(chan TicketId, 1024),
+		Leave:             make(chan TicketId, 1024),
+		NotifyFinish:      make(chan TicketId, 1024),
+		NotifyDirtyTicket: make(chan *Ticket, 1024),
+		NotifyStats:       make(chan *Stats, 1024),
 		ticketQueue:       linkedhashmap.New(),
 
 		stats:  stats,
@@ -72,7 +78,7 @@ func (q *Queue) queueWorker() {
 
 	for {
 		select {
-		case ticketId := <-q.enter:
+		case ticketId := <-q.Enter:
 			logger.Debugf("enter ticketId[%+v]", ticketId)
 			var ticket *Ticket
 			if value, doesExist := q.ticketQueue.Get(ticketId); doesExist {
@@ -86,12 +92,12 @@ func (q *Queue) queueWorker() {
 					logger.Infof("set back to active ticket[%+v]", ticket)
 					continue
 				}
-				q.ticketQueue.Remove(ticket.ticketId)
+				q.ticketQueue.Remove(ticket.TicketId)
 				logger.Infof("removed stale ticket[%+v]", ticket)
 			}
 			q.push(ticketId)
 
-		case ticketId := <-q.leave:
+		case ticketId := <-q.Leave:
 			logger.Debugf("leave ticketId[%+v]", ticketId)
 			value, ok := q.ticketQueue.Get(ticketId)
 			if !ok {
@@ -120,7 +126,7 @@ func (q *Queue) queueWorker() {
 				}
 
 				q.pop(ticketId)
-				q.notifyFinish <- ticketId
+				q.NotifyFinish <- ticketId
 				slots--
 
 				waitDuration := time.Since(ticket.createTime)
@@ -153,14 +159,14 @@ func (q *Queue) statsWorker() {
 	defer ticker.Stop()
 
 	for ; true; <-ticker.C {
-		q.notifyStats <- q.stats
+		q.NotifyStats <- q.stats
 
 		it := q.ticketQueue.Iterator()
 		for it.Begin(); it.Next(); {
 			_, ticket := it.Key().(TicketId), it.Value().(*Ticket)
 			if ticket.isDirty {
 				ticket.isDirty = false
-				q.notifyDirtyTicket <- ticket
+				q.NotifyDirtyTicket <- ticket
 			}
 		}
 	}
@@ -170,10 +176,10 @@ func (q *Queue) push(ticketId TicketId) {
 	q.stats.incrTailPosition()
 
 	ticket := &Ticket{
-		ticketId:   ticketId,
+		TicketId:   ticketId,
+		Position:   q.stats.TailPosition,
 		isActive:   true,
 		isDirty:    true,
-		position:   q.stats.tailPosition,
 		createTime: time.Now(),
 	}
 	q.ticketQueue.Put(ticketId, ticket)

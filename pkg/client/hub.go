@@ -1,13 +1,18 @@
-package main
+package client
 
 import (
 	"encoding/json"
 	"fmt"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/msg"
+	"game-soul-technology/joker/joker-login-queue-server/pkg/queue"
 	"os"
 
 	"github.com/emirpasic/gods/maps/hashmap"
+)
+
+var (
+	logger = infra.BaseLogger.Sugar()
 )
 
 type ClientRequest struct {
@@ -16,10 +21,10 @@ type ClientRequest struct {
 }
 
 type Hub struct {
-	// Registered clients. Key value: client.ticketId -> client.
+	// Registered clients. Key value: client.id -> client.
 	clients *hashmap.Map
 
-	// Stores login request from clients. Key value: client.ticketId -> client.
+	// Stores login request from clients. Key value: client.id -> client.
 	loginDataCache *hashmap.Map
 
 	// Inbound messages from the clients.
@@ -34,10 +39,10 @@ type Hub struct {
 	// Ws message from clients.
 	wsRequest chan *ClientRequest
 
-	queue *Queue
+	queue *queue.Queue
 }
 
-func ProvideHub(queue *Queue) *Hub {
+func ProvideHub(queue *queue.Queue) *Hub {
 	return &Hub{
 		clients:        hashmap.New(),
 		loginDataCache: hashmap.New(),
@@ -60,18 +65,18 @@ func (h *Hub) handleClient() {
 	for {
 		select {
 		case client := <-h.register:
-			logger.Debugf("register client ticketId[%v] ip[%v]", client.ticketId, client.ip)
-			h.clients.Put(client.ticketId, client)
+			logger.Debugf("register client id[%v] ip[%v]", client.id, client.ip)
+			h.clients.Put(client.id, client)
 
 		case client := <-h.unregister:
-			logger.Debugf("unregister client ticketId[%v]", client.ticketId)
+			logger.Debugf("unregister client id[%v]", client.id)
 
-			_, ok := h.clients.Get(client.ticketId)
+			_, ok := h.clients.Get(client.id)
 			if !ok {
 				continue
 			}
 
-			h.queue.leave <- client.ticketId
+			h.queue.Leave <- queue.TicketId(client.id)
 			h.removeClient(client)
 
 		case req := <-h.wsRequest:
@@ -80,16 +85,16 @@ func (h *Hub) handleClient() {
 				event := &msg.LoginClientEvent{}
 				err := json.Unmarshal(req.wsMessage.EventData, event)
 				if err != nil {
-					logger.Errorf("ticketId[%v] %v", req.client.ticketId, err)
+					logger.Errorf("id[%v] %v", req.client.id, err)
 					continue
 				}
 
 				logger.Debugf("storing event[%+v] into loginReqCache", event)
-				h.loginDataCache.Put(req.client.ticketId, event)
-				h.queue.enter <- req.client.ticketId
+				h.loginDataCache.Put(req.client.id, event)
+				h.queue.Enter <- queue.TicketId(req.client.id)
 
 			default:
-				logger.Errorf("ticketId[%v] invalid eventCode[%v]", req.client.ticketId, req.wsMessage.EventCode)
+				logger.Errorf("id[%v] invalid eventCode[%v]", req.client.id, req.wsMessage.EventCode)
 			}
 		}
 	}
@@ -98,17 +103,17 @@ func (h *Hub) handleClient() {
 func (h *Hub) handleQueue() {
 	for {
 		select {
-		case ticket := <-h.queue.notifyDirtyTicket:
-			logger.Debugf("notifyDirtyTicket ticketId[%v]", ticket.ticketId)
-			value, ok := h.clients.Get(ticket.ticketId)
+		case ticket := <-h.queue.NotifyDirtyTicket:
+			logger.Debugf("notifyDirtyTicket ticketId[%v]", ticket.TicketId)
+			value, ok := h.clients.Get(string(ticket.TicketId))
 			if !ok {
-				logger.Warnf("notifyDirtyTicket but cannot find client for ticketId[%v]", ticket.ticketId)
+				logger.Warnf("notifyDirtyTicket but cannot find client for ticketId[%v]", ticket.TicketId)
 				continue
 			}
 
 			rawEvent, err := json.Marshal(&msg.TicketServerEvent{
-				TicketId: string(ticket.ticketId),
-				Position: ticket.position,
+				TicketId: string(ticket.TicketId),
+				Position: ticket.Position,
 			})
 			if err != nil {
 				logger.Errorf("cannot marshal TicketServerEvent %v", err)
@@ -123,12 +128,12 @@ func (h *Hub) handleQueue() {
 			client := value.(*Client)
 			client.sendWsMessage <- wsMessage
 
-		case stats := <-h.queue.notifyStats:
+		case stats := <-h.queue.NotifyStats:
 			logger.Debugf("notifyStats stats[%+v]", stats)
 			rawEvent, err := json.Marshal(&msg.QueueStatsServerEvent{
-				HeadPosition: stats.headPosition,
-				TailPosition: stats.tailPosition,
-				AvgWaitMsec:  stats.avgWaitDuration.Milliseconds(),
+				HeadPosition: stats.HeadPosition,
+				TailPosition: stats.TailPosition,
+				AvgWaitMsec:  stats.AvgWaitDuration.Milliseconds(),
 			})
 			if err != nil {
 				logger.Errorf("cannot marshal QueueStatsServerEvent %v", err)
@@ -145,16 +150,16 @@ func (h *Hub) handleQueue() {
 				client.sendWsMessage <- wsMessage
 			}
 
-		case ticketId := <-h.queue.notifyFinish:
+		case ticketId := <-h.queue.NotifyFinish:
 			logger.Debugf("notifyFinish ticketId[%v]", ticketId)
-			value, ok := h.clients.Get(ticketId)
+			value, ok := h.clients.Get(string(ticketId))
 			if !ok {
 				logger.Warnf("notifyFinish but cannot find client for ticketId[%v]", ticketId)
 				continue
 			}
 			client := value.(*Client)
 
-			value, ok = h.loginDataCache.Get(ticketId)
+			value, ok = h.loginDataCache.Get(string(ticketId))
 			if !ok {
 				logger.Warnf("notifyFinish but cannot find login request info for ticketId[%v]", ticketId)
 				continue
@@ -170,8 +175,8 @@ func (h *Hub) handleQueue() {
 
 func (h *Hub) removeClient(client *Client) {
 	// TOOD: add lock
-	h.clients.Remove(client.ticketId)
-	h.loginDataCache.Remove(client.ticketId)
+	h.clients.Remove(client.id)
+	h.loginDataCache.Remove(client.id)
 	client.TryClose(false) // Notify client it should close now.
 }
 
@@ -227,7 +232,7 @@ func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, client *Client, re
 		return
 	}
 
-	logger.Infof("login success for ticketId[%v]", client.ticketId)
+	logger.Infof("login success for id[%v]", client.id)
 	result <- authData.Data.Jwt
 }
 

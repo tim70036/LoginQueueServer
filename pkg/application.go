@@ -2,25 +2,30 @@ package main
 
 import (
 	"encoding/json"
+	"game-soul-technology/joker/joker-login-queue-server/pkg/client"
+	"game-soul-technology/joker/joker-login-queue-server/pkg/config"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/msg"
+	"game-soul-technology/joker/joker-login-queue-server/pkg/queue"
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 )
 
 type Application struct {
-	config     *Config
-	hub        *Hub
-	queue      *Queue
-	wsUpgrader *websocket.Upgrader
+	config        *config.Config
+	clientFactory *client.ClientFactory
+	hub           *client.Hub
+	queue         *queue.Queue
+	wsUpgrader    *websocket.Upgrader
 }
 
-func ProvideApplication(config *Config, hub *Hub, queue *Queue) *Application {
+func ProvideApplication(config *config.Config, clientFactory *client.ClientFactory, hub *client.Hub, queue *queue.Queue) *Application {
 	return &Application{
-		config:     config,
-		hub:        hub,
-		queue:      queue,
-		wsUpgrader: &websocket.Upgrader{},
+		config:        config,
+		clientFactory: clientFactory,
+		hub:           hub,
+		queue:         queue,
+		wsUpgrader:    &websocket.Upgrader{},
 	}
 }
 
@@ -30,7 +35,6 @@ func (a *Application) Run() {
 	go a.queue.Run()
 }
 
-// TODO: make client factory.
 func (a *Application) HandleWs(c echo.Context) error {
 	conn, err := a.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
@@ -59,15 +63,16 @@ func (a *Application) HandleWs(c echo.Context) error {
 		return nil
 	}
 
-	client := &Client{
-		ticketId:      TicketId(c.Request().Header.Get("ticketId")),
-		platform:      c.Request().Header.Get("platform"),
-		ip:            c.RealIP(),
-		conn:          conn,
-		sendWsMessage: make(chan *msg.WsMessage, 64),
-		close:         make(chan []byte, 1),
-		hub:           a.hub,
+	client, err := a.clientFactory.Create(c, conn, a.hub)
+	if err != nil {
+		logger.Errorf("cannot create client %v", err)
+		if err := conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseUnsupportedData, "")); err != nil {
+			logger.Errorf("cannot write close message to ws conn %v", err)
+		}
+		conn.Close()
+		return nil
 	}
+
 	go client.Run()
 
 	return nil
