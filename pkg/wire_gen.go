@@ -21,10 +21,10 @@ func Setup() (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	configConfig := config.ProvideConfig(redisClient, loggerFactory)
+	reqClient := infra.ProvideHttpClient()
+	configConfig := config.ProvideConfig(redisClient, reqClient, loggerFactory)
 	stats := queue.ProvideStats(loggerFactory)
 	queueQueue := queue.ProvideQueue(stats, configConfig, loggerFactory)
-	reqClient := infra.ProvideHttpClient()
 	hub := client.ProvideHub(queueQueue, reqClient, loggerFactory)
 	clientFactory := client.ProvideClientFactory(hub, loggerFactory)
 	application := ProvideApplication(configConfig, clientFactory, hub, queueQueue, loggerFactory)

@@ -5,12 +5,15 @@ FROM golang:1.19-alpine3.17 AS build
 
 WORKDIR /app
 
+RUN apk add build-base
+
 COPY go.mod ./
 COPY go.sum ./
 RUN go mod download
+RUN go install github.com/google/wire/cmd/wire@latest
 
 COPY . ./
-RUN go mod download
+RUN wire ./pkg
 RUN go build -o ./build/server ./pkg
 
 ##

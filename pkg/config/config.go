@@ -3,9 +3,12 @@ package config
 import (
 	"context"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/imroc/req/v3"
 	"go.uber.org/zap"
 )
 
@@ -15,12 +18,14 @@ type Config struct {
 	IsQueueEnabled       bool `redis:"isQueueEnabled"`
 
 	redisClient *redis.Client
+	httpClient  *req.Client
 	logger      *zap.SugaredLogger
 }
 
-func ProvideConfig(redisClient *redis.Client, loggerFactory *infra.LoggerFactory) *Config {
+func ProvideConfig(redisClient *redis.Client, httpClient *req.Client, loggerFactory *infra.LoggerFactory) *Config {
 	return &Config{
 		redisClient: redisClient,
+		httpClient:  httpClient,
 		logger:      loggerFactory.Create("Config").Sugar(),
 	}
 }
@@ -47,8 +52,44 @@ func (c *Config) Run() {
 		// TODO: get data from redis and main server.
 		c.logger.Infof("updating config")
 
-		if _, err := c.redisClient.HSet(context.TODO(), cfgRedisKey, "onlineUsers", 1000).Result(); err != nil {
+		onlineResult := &struct {
+			Data struct {
+				OnlineUsers string `json:"onlineUsers"`
+				PlayingAis  string `json:"playingAis"`
+			} `json:"data"`
+		}{}
+
+		resp, err := c.httpClient.R().
+			SetHeader("jwt", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiJhOGQyNTI2YS0yOGFhLTQ0OGQtYWJjZi1lYjAzMTgxZDNlOTMiLCJpYXQiOjE2NzA4MzIzOTR9.N8OdBi48YsMyBa7CQGVlqVE9YCz55AVCf9NORFxpOuM").
+			SetResult(onlineResult).
+			Get(os.Getenv("MAIN_SERVER_HOST") + "/api/user/online-users")
+
+		if err != nil {
+			c.logger.Errorf("request failed %v", err)
+			continue
+		}
+
+		if resp.IsError() {
+			c.logger.Errorf("request failed with status[%v]", resp.Status)
+			continue
+		}
+
+		c.logger.Infof("retrieved online user result[%+v]", onlineResult)
+
+		number, err := strconv.Atoi(onlineResult.Data.OnlineUsers)
+		if err != nil {
+			c.logger.Errorf("cannot parse online user number[%v] to int %v", number, err)
+			continue
+		}
+
+		if _, err := c.redisClient.HSet(context.TODO(), cfgRedisKey, "onlineUsers", number).Result(); err != nil {
 			c.logger.Errorf("err setting onlineUsers to redis %v", err)
+			continue
+		}
+
+		// TODO: remove this
+		if _, err := c.redisClient.HSet(context.TODO(), cfgRedisKey, "onlineUsersThreshold", number+1).Result(); err != nil {
+			c.logger.Errorf("err setting onlineUsersThreshold to redis %v", err)
 			continue
 		}
 

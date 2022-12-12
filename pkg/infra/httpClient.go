@@ -13,5 +13,5 @@ func ProvideHttpClient() *req.Client {
 		// Enable retry and set the maximum retry count.
 		SetCommonRetryCount(3).
 		// Set the retry sleep interval with a commonly used algorithm: capped exponential backoff with jitter (https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/).
-		SetCommonRetryFixedInterval(3 * time.Second).EnableDumpEachRequest()
+		SetCommonRetryFixedInterval(3 * time.Second)
 }

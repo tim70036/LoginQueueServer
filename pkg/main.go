@@ -10,7 +10,6 @@ import (
 func main() {
 	// TODO: remove this
 	infra.LoggerLevel.SetLevel(zapcore.DebugLevel)
-	// infra.HttpClient.EnableDumpAll()
 
 	server, err := Setup()
 	if err != nil {
