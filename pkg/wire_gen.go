@@ -9,18 +9,25 @@ package main
 import (
 	"game-soul-technology/joker/joker-login-queue-server/pkg/client"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/config"
+	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/queue"
 )
 
 // Injectors from wire.go:
 
-func Setup() *Server {
-	configConfig := config.ProvideConfig()
-	clientFactory := client.ProvideClientFactory()
-	stats := queue.ProvideStats()
-	queueQueue := queue.ProvideQueue(stats, configConfig)
-	hub := client.ProvideHub(queueQueue)
-	application := ProvideApplication(configConfig, clientFactory, hub, queueQueue)
-	server := ProvideServer(application)
-	return server
+func Setup() (*Server, error) {
+	loggerFactory := infra.ProvideLoggerFactory()
+	redisClient, err := infra.ProvideRedisClient(loggerFactory)
+	if err != nil {
+		return nil, err
+	}
+	configConfig := config.ProvideConfig(redisClient, loggerFactory)
+	stats := queue.ProvideStats(loggerFactory)
+	queueQueue := queue.ProvideQueue(stats, configConfig, loggerFactory)
+	reqClient := infra.ProvideHttpClient()
+	hub := client.ProvideHub(queueQueue, reqClient, loggerFactory)
+	clientFactory := client.ProvideClientFactory(hub, loggerFactory)
+	application := ProvideApplication(configConfig, clientFactory, hub, queueQueue, loggerFactory)
+	server := ProvideServer(application, reqClient, loggerFactory)
+	return server, nil
 }

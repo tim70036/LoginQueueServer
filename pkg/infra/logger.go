@@ -6,13 +6,19 @@ import (
 )
 
 var (
-	BaseLogger = NewLogger()
-
 	// Allow changing log level at run time.
 	LoggerLevel = zap.NewAtomicLevelAt(zapcore.InfoLevel)
 )
 
-func NewLogger() *zap.Logger {
+type LoggerFactory struct {
+	baseLogger *zap.Logger
+}
+
+func (f *LoggerFactory) Create(name string) *zap.Logger {
+	return f.baseLogger.Named(name)
+}
+
+func ProvideLoggerFactory() *LoggerFactory {
 	// See the documentation for Config and zapcore.EncoderConfig for all the
 	// available options.
 	var cfg = zap.Config{
@@ -33,11 +39,14 @@ func NewLogger() *zap.Logger {
 			LineEnding:     zapcore.DefaultLineEnding,
 			EncodeLevel:    zapcore.CapitalColorLevelEncoder,
 			EncodeTime:     zapcore.ISO8601TimeEncoder,
-			EncodeDuration: zapcore.StringDurationEncoder,
+			EncodeDuration: zapcore.MillisDurationEncoder,
 			EncodeCaller:   zapcore.ShortCallerEncoder,
 		},
 	}
 	logger := zap.Must(cfg.Build())
 	logger.Info("logger created")
-	return logger
+
+	return &LoggerFactory{
+		baseLogger: logger,
+	}
 }

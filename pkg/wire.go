@@ -6,20 +6,24 @@ package main
 import (
 	"game-soul-technology/joker/joker-login-queue-server/pkg/client"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/config"
+	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/queue"
 
 	"github.com/google/wire"
 )
 
-func Setup() *Server {
+func Setup() (*Server, error) {
 	wire.Build(wire.NewSet(
 		ProvideServer,
 		ProvideApplication,
-		config.ProvideConfig,
 		client.ProvideClientFactory,
 		client.ProvideHub,
+		config.ProvideConfig,
+		infra.ProvideHttpClient,
+		infra.ProvideRedisClient,
+		infra.ProvideLoggerFactory,
 		queue.ProvideQueue,
 		queue.ProvideStats,
 	))
-	return nil
+	return nil, nil
 }

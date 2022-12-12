@@ -1,11 +1,13 @@
 package queue
 
 import (
+	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"math"
 	"time"
 
 	"github.com/emirpasic/gods/maps/linkedhashmap"
 	"github.com/emirpasic/gods/queues/linkedlistqueue"
+	"go.uber.org/zap"
 )
 
 const (
@@ -28,15 +30,19 @@ type Stats struct {
 
 	// A fixed size sliding window for calculating average wait time.
 	waitDurationQueue *linkedlistqueue.Queue
+
+	logger *zap.SugaredLogger
 }
 
-func ProvideStats() *Stats {
+func ProvideStats(loggerFactory *infra.LoggerFactory) *Stats {
 	return &Stats{
 		HeadPosition: 0,
 		TailPosition: 0,
 
 		AvgWaitDuration:   initAvgWaitDuration,
 		waitDurationQueue: linkedlistqueue.New(),
+
+		logger: loggerFactory.Create("Stats").Sugar(),
 	}
 }
 
@@ -85,5 +91,5 @@ func (s *Stats) updateAvgWait(waitDurations []time.Duration) {
 	}
 
 	s.AvgWaitDuration = totalWaitDuration / time.Duration(s.waitDurationQueue.Size())
-	logger.Infof("updated avgWaitDuration[%v]", s.AvgWaitDuration)
+	s.logger.Infof("updated avgWaitDuration[%v]", s.AvgWaitDuration)
 }

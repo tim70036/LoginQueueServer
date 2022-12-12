@@ -7,15 +7,12 @@ import (
 	"time"
 
 	"github.com/emirpasic/gods/maps/linkedhashmap"
+	"go.uber.org/zap"
 )
 
 const (
 	notifyStatsInterval = 5 * time.Second
 	dequeueInterval     = 15 * time.Second
-)
-
-var (
-	logger = infra.BaseLogger.Sugar()
 )
 
 type Queue struct {
@@ -48,9 +45,11 @@ type Queue struct {
 	stats *Stats
 
 	config *config.Config
+
+	logger *zap.SugaredLogger
 }
 
-func ProvideQueue(stats *Stats, config *config.Config) *Queue {
+func ProvideQueue(stats *Stats, config *config.Config, loggerFactory *infra.LoggerFactory) *Queue {
 	return &Queue{
 		Enter:             make(chan TicketId, 1024),
 		Leave:             make(chan TicketId, 1024),
@@ -61,6 +60,7 @@ func ProvideQueue(stats *Stats, config *config.Config) *Queue {
 
 		stats:  stats,
 		config: config,
+		logger: loggerFactory.Create("Queue").Sugar(),
 	}
 }
 
@@ -79,7 +79,7 @@ func (q *Queue) queueWorker() {
 	for {
 		select {
 		case ticketId := <-q.Enter:
-			logger.Debugf("enter ticketId[%+v]", ticketId)
+			q.logger.Debugf("enter ticketId[%+v]", ticketId)
 			var ticket *Ticket
 			if value, doesExist := q.ticketQueue.Get(ticketId); doesExist {
 				// Skip for ticket that's already in queue. Remove it
@@ -89,16 +89,16 @@ func (q *Queue) queueWorker() {
 				if !ticket.IsStale() {
 					ticket.isActive = true
 					ticket.isDirty = true
-					logger.Infof("set back to active ticket[%+v]", ticket)
+					q.logger.Infof("set back to active ticket[%+v]", ticket)
 					continue
 				}
 				q.ticketQueue.Remove(ticket.TicketId)
-				logger.Infof("removed stale ticket[%+v]", ticket)
+				q.logger.Infof("removed stale ticket[%+v]", ticket)
 			}
 			q.push(ticketId)
 
 		case ticketId := <-q.Leave:
-			logger.Debugf("leave ticketId[%+v]", ticketId)
+			q.logger.Debugf("leave ticketId[%+v]", ticketId)
 			value, ok := q.ticketQueue.Get(ticketId)
 			if !ok {
 				continue
@@ -107,7 +107,7 @@ func (q *Queue) queueWorker() {
 			ticket := value.(*Ticket)
 			ticket.isActive = false
 			ticket.inactiveTime = time.Now()
-			logger.Infof("set inactive ticket[%+v]", ticket)
+			q.logger.Infof("set inactive ticket[%+v]", ticket)
 
 		case <-ticker.C:
 			// Dequeue the first n tickets that is active, skip
@@ -115,7 +115,7 @@ func (q *Queue) queueWorker() {
 			// just skip him until next ticker. If he never comes
 			// back, will be removed due to stale.
 			slots := q.config.GetFreeSlots()
-			logger.Infof("dequeueing with slots[%v]", slots)
+			q.logger.Infof("dequeueing with slots[%v]", slots)
 
 			it := q.ticketQueue.Iterator()
 			var waitDurations []time.Duration
@@ -132,11 +132,11 @@ func (q *Queue) queueWorker() {
 				waitDuration := time.Since(ticket.createTime)
 				waitDurations = append(waitDurations, waitDuration)
 
-				logger.Infof("dequeue ticket[%+v] waitDuration[%v]", ticket, waitDuration)
+				q.logger.Infof("dequeue ticket[%+v] waitDuration[%v]", ticket, waitDuration)
 			}
 
 			// Remove staled ticket from pool
-			logger.Infof("removing stale tickets")
+			q.logger.Infof("removing stale tickets")
 			for it.Begin(); it.Next(); {
 				ticketId, ticket := it.Key().(TicketId), it.Value().(*Ticket)
 				if !ticket.IsStale() {
@@ -144,7 +144,7 @@ func (q *Queue) queueWorker() {
 				}
 
 				q.pop(ticketId)
-				logger.Infof("removed stale ticket[%+v]", ticket)
+				q.logger.Infof("removed stale ticket[%+v]", ticket)
 			}
 
 			// Update stats.
@@ -184,7 +184,7 @@ func (q *Queue) push(ticketId TicketId) {
 	}
 	q.ticketQueue.Put(ticketId, ticket)
 
-	logger.Infof("inserted new ticket[%+v]", ticket)
+	q.logger.Infof("inserted new ticket[%+v]", ticket)
 }
 
 func (q *Queue) pop(ticketId TicketId) {
@@ -198,5 +198,5 @@ func (q *Queue) dumpQueue() {
 		_, ticket := it.Key(), it.Value().(*Ticket)
 		ticketData = ticketData + fmt.Sprintf("ticket[%+v]\n", ticket)
 	}
-	logger.Debugf("ticketQueue:\n\n" + ticketData + "\n\n")
+	q.logger.Debugf("ticketQueue:\n\n" + ticketData + "\n\n")
 }

@@ -9,10 +9,8 @@ import (
 	"os"
 
 	"github.com/emirpasic/gods/maps/hashmap"
-)
-
-var (
-	logger = infra.BaseLogger.Sugar()
+	"github.com/imroc/req/v3"
+	"go.uber.org/zap"
 )
 
 type ClientRequest struct {
@@ -40,9 +38,13 @@ type Hub struct {
 	wsRequest chan *ClientRequest
 
 	queue *queue.Queue
+
+	httpClient *req.Client
+
+	logger *zap.SugaredLogger
 }
 
-func ProvideHub(queue *queue.Queue) *Hub {
+func ProvideHub(queue *queue.Queue, httpClient *req.Client, loggerFactory *infra.LoggerFactory) *Hub {
 	return &Hub{
 		clients:        hashmap.New(),
 		loginDataCache: hashmap.New(),
@@ -52,7 +54,9 @@ func ProvideHub(queue *queue.Queue) *Hub {
 		unregister: make(chan *Client, 1024),
 		wsRequest:  make(chan *ClientRequest, 1024),
 
-		queue: queue,
+		queue:      queue,
+		httpClient: httpClient,
+		logger:     loggerFactory.Create("Hub").Sugar(),
 	}
 }
 
@@ -65,11 +69,11 @@ func (h *Hub) handleClient() {
 	for {
 		select {
 		case client := <-h.register:
-			logger.Debugf("register client id[%v] ip[%v]", client.id, client.ip)
+			h.logger.Debugf("register client id[%v] ip[%v]", client.id, client.ip)
 			h.clients.Put(client.id, client)
 
 		case client := <-h.unregister:
-			logger.Debugf("unregister client id[%v]", client.id)
+			h.logger.Debugf("unregister client id[%v]", client.id)
 
 			_, ok := h.clients.Get(client.id)
 			if !ok {
@@ -85,16 +89,16 @@ func (h *Hub) handleClient() {
 				event := &msg.LoginClientEvent{}
 				err := json.Unmarshal(req.wsMessage.EventData, event)
 				if err != nil {
-					logger.Errorf("id[%v] %v", req.client.id, err)
+					h.logger.Errorf("id[%v] %v", req.client.id, err)
 					continue
 				}
 
-				logger.Debugf("storing event[%+v] into loginReqCache", event)
+				h.logger.Debugf("storing event[%+v] into loginReqCache", event)
 				h.loginDataCache.Put(req.client.id, event)
 				h.queue.Enter <- queue.TicketId(req.client.id)
 
 			default:
-				logger.Errorf("id[%v] invalid eventCode[%v]", req.client.id, req.wsMessage.EventCode)
+				h.logger.Errorf("id[%v] invalid eventCode[%v]", req.client.id, req.wsMessage.EventCode)
 			}
 		}
 	}
@@ -104,10 +108,10 @@ func (h *Hub) handleQueue() {
 	for {
 		select {
 		case ticket := <-h.queue.NotifyDirtyTicket:
-			logger.Debugf("notifyDirtyTicket ticketId[%v]", ticket.TicketId)
+			h.logger.Debugf("notifyDirtyTicket ticketId[%v]", ticket.TicketId)
 			value, ok := h.clients.Get(string(ticket.TicketId))
 			if !ok {
-				logger.Warnf("notifyDirtyTicket but cannot find client for ticketId[%v]", ticket.TicketId)
+				h.logger.Warnf("notifyDirtyTicket but cannot find client for ticketId[%v]", ticket.TicketId)
 				continue
 			}
 
@@ -116,7 +120,7 @@ func (h *Hub) handleQueue() {
 				Position: ticket.Position,
 			})
 			if err != nil {
-				logger.Errorf("cannot marshal TicketServerEvent %v", err)
+				h.logger.Errorf("cannot marshal TicketServerEvent %v", err)
 				return
 			}
 
@@ -129,14 +133,14 @@ func (h *Hub) handleQueue() {
 			client.sendWsMessage <- wsMessage
 
 		case stats := <-h.queue.NotifyStats:
-			logger.Debugf("notifyStats stats[%+v]", stats)
+			h.logger.Debugf("notifyStats stats[%+v]", stats)
 			rawEvent, err := json.Marshal(&msg.QueueStatsServerEvent{
 				HeadPosition: stats.HeadPosition,
 				TailPosition: stats.TailPosition,
 				AvgWaitMsec:  stats.AvgWaitDuration.Milliseconds(),
 			})
 			if err != nil {
-				logger.Errorf("cannot marshal QueueStatsServerEvent %v", err)
+				h.logger.Errorf("cannot marshal QueueStatsServerEvent %v", err)
 				return
 			}
 
@@ -151,17 +155,17 @@ func (h *Hub) handleQueue() {
 			}
 
 		case ticketId := <-h.queue.NotifyFinish:
-			logger.Debugf("notifyFinish ticketId[%v]", ticketId)
+			h.logger.Debugf("notifyFinish ticketId[%v]", ticketId)
 			value, ok := h.clients.Get(string(ticketId))
 			if !ok {
-				logger.Warnf("notifyFinish but cannot find client for ticketId[%v]", ticketId)
+				h.logger.Warnf("notifyFinish but cannot find client for ticketId[%v]", ticketId)
 				continue
 			}
 			client := value.(*Client)
 
 			value, ok = h.loginDataCache.Get(string(ticketId))
 			if !ok {
-				logger.Warnf("notifyFinish but cannot find login request info for ticketId[%v]", ticketId)
+				h.logger.Warnf("notifyFinish but cannot find login request info for ticketId[%v]", ticketId)
 				continue
 			}
 			loginData := value.(*msg.LoginClientEvent)
@@ -204,7 +208,7 @@ func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, client *Client, re
 		url += "/line"
 		payload = fmt.Sprintf(`{"accessToken":"%v"}`, loginData.Token)
 	default:
-		logger.Errorf("invalid login type[%v]", loginData.Type)
+		h.logger.Errorf("invalid login type[%v]", loginData.Type)
 		return
 	}
 
@@ -215,7 +219,7 @@ func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, client *Client, re
 	}{}
 
 	// TODO hwo to send client IP
-	resp, err := infra.HttpClient.R().
+	resp, err := h.httpClient.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("platform", client.platform).
 		SetBody(payload).
@@ -223,16 +227,16 @@ func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, client *Client, re
 		Post(url)
 
 	if err != nil {
-		logger.Errorf("request failed %v", err)
+		h.logger.Errorf("request failed %v", err)
 		return
 	}
 
 	if resp.IsError() {
-		logger.Errorf("request failed with status[%v]", resp.Status)
+		h.logger.Errorf("request failed with status[%v]", resp.Status)
 		return
 	}
 
-	logger.Infof("login success for id[%v]", client.id)
+	h.logger.Infof("login success for id[%v]", client.id)
 	result <- authData.Data.Jwt
 }
 
@@ -241,7 +245,7 @@ func (h *Hub) finishClient(client *Client, result <-chan string) {
 
 	jwt, ok := <-result
 	if !ok {
-		logger.Warnf("cannot get login credential from closed channel")
+		h.logger.Warnf("cannot get login credential from closed channel")
 		return
 	}
 
@@ -249,7 +253,7 @@ func (h *Hub) finishClient(client *Client, result <-chan string) {
 		Jwt: jwt,
 	})
 	if err != nil {
-		logger.Errorf("cannot marshal LoginServerEvent %v", err)
+		h.logger.Errorf("cannot marshal LoginServerEvent %v", err)
 		return
 	}
 

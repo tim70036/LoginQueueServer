@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/client"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/config"
+	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/msg"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/queue"
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 )
 
 type Application struct {
@@ -17,15 +19,17 @@ type Application struct {
 	hub           *client.Hub
 	queue         *queue.Queue
 	wsUpgrader    *websocket.Upgrader
+	logger        *zap.SugaredLogger
 }
 
-func ProvideApplication(config *config.Config, clientFactory *client.ClientFactory, hub *client.Hub, queue *queue.Queue) *Application {
+func ProvideApplication(config *config.Config, clientFactory *client.ClientFactory, hub *client.Hub, queue *queue.Queue, loggerFactory *infra.LoggerFactory) *Application {
 	return &Application{
 		config:        config,
 		clientFactory: clientFactory,
 		hub:           hub,
 		queue:         queue,
 		wsUpgrader:    &websocket.Upgrader{},
+		logger:        loggerFactory.Create("Application").Sugar(),
 	}
 }
 
@@ -53,21 +57,21 @@ func (a *Application) HandleWs(c echo.Context) error {
 			EventData: rawEvent,
 		}
 		if err := conn.WriteJSON(wsMessage); err != nil {
-			logger.Errorf("cannot write json to ws conn %v", err)
+			a.logger.Errorf("cannot write json to ws conn %v", err)
 		}
 
 		if err := conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseTryAgainLater, "No need queue")); err != nil {
-			logger.Errorf("cannot write close message to ws conn %v", err)
+			a.logger.Errorf("cannot write close message to ws conn %v", err)
 		}
 		conn.Close()
 		return nil
 	}
 
-	client, err := a.clientFactory.Create(c, conn, a.hub)
+	client, err := a.clientFactory.Create(c, conn)
 	if err != nil {
-		logger.Errorf("cannot create client %v", err)
+		a.logger.Errorf("cannot create client %v", err)
 		if err := conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseUnsupportedData, "")); err != nil {
-			logger.Errorf("cannot write close message to ws conn %v", err)
+			a.logger.Errorf("cannot write close message to ws conn %v", err)
 		}
 		conn.Close()
 		return nil

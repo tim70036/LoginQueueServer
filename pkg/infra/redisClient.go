@@ -8,24 +8,20 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
-var (
-	RedisClient *redis.Client
-)
-
-func init() {
+func ProvideRedisClient(loggerFactory *LoggerFactory) (*redis.Client, error) {
+	logger := loggerFactory.Create("RedisClient").Sugar()
 	redisDb, err := strconv.Atoi(os.Getenv("REDIS_DB"))
 	if err != nil {
-		BaseLogger.Sugar().Errorf("invalid redis db %v", err)
-		return
+		logger.Errorf("invalid redis db %v", err)
+		return nil, err
 	}
 
-	RedisClient = redis.NewClient(&redis.Options{
+	return redis.NewClient(&redis.Options{
 		Addr: os.Getenv("REDIS_HOST"),
 		DB:   redisDb,
 		OnConnect: func(ctx context.Context, cn *redis.Conn) error {
-			BaseLogger.Sugar().Infof("redis connected to host[%v] db[%v]", os.Getenv("REDIS_HOST"), redisDb)
+			logger.Infof("redis connected to host[%v] db[%v]", os.Getenv("REDIS_HOST"), redisDb)
 			return nil
 		},
-	})
-
+	}), nil
 }

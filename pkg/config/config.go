@@ -4,20 +4,25 @@ import (
 	"context"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"time"
-)
 
-var (
-	logger = infra.BaseLogger.Sugar()
+	"github.com/go-redis/redis/v8"
+	"go.uber.org/zap"
 )
 
 type Config struct {
 	OnlineUsers          uint `redis:"onlineUsers"`
 	OnlineUsersThreshold uint `redis:"onlineUsersThreshold"`
 	IsQueueEnabled       bool `redis:"isQueueEnabled"`
+
+	redisClient *redis.Client
+	logger      *zap.SugaredLogger
 }
 
-func ProvideConfig() *Config {
-	return &Config{}
+func ProvideConfig(redisClient *redis.Client, loggerFactory *infra.LoggerFactory) *Config {
+	return &Config{
+		redisClient: redisClient,
+		logger:      loggerFactory.Create("Config").Sugar(),
+	}
 }
 
 const (
@@ -40,17 +45,17 @@ func (c *Config) Run() {
 	ticker := time.NewTicker(cfgUpdateInterval)
 	for ; true; <-ticker.C {
 		// TODO: get data from redis and main server.
-		logger.Infof("updating config")
+		c.logger.Infof("updating config")
 
-		if _, err := infra.RedisClient.HSet(context.TODO(), cfgRedisKey, "onlineUsers", 1000).Result(); err != nil {
-			logger.Errorf("err setting onlineUsers to redis %v", err)
+		if _, err := c.redisClient.HSet(context.TODO(), cfgRedisKey, "onlineUsers", 1000).Result(); err != nil {
+			c.logger.Errorf("err setting onlineUsers to redis %v", err)
 			continue
 		}
 
-		if err := infra.RedisClient.HGetAll(context.TODO(), cfgRedisKey).Scan(c); err != nil {
-			logger.Errorf("err reading config from redis %v", err)
+		if err := c.redisClient.HGetAll(context.TODO(), cfgRedisKey).Scan(c); err != nil {
+			c.logger.Errorf("err reading config from redis %v", err)
 			continue
 		}
-		logger.Infof("updated config[%+v]", c)
+		c.logger.Infof("updated config[%+v]", c)
 	}
 }

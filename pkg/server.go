@@ -6,17 +6,22 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/imroc/req/v3"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
 type Server struct {
 	application *Application
 	server      *http.Server
+	logger      *zap.SugaredLogger
 }
 
-func ProvideServer(application *Application) *Server {
+func ProvideServer(application *Application, httpClient *req.Client, loggerFactory *infra.LoggerFactory) *Server {
+	logger := loggerFactory.Create("Server").Sugar()
+
 	e := echo.New()
 	e.Use(middleware.RequestID())
 	e.Use(middleware.Recover())
@@ -38,14 +43,14 @@ func ProvideServer(application *Application) *Server {
 
 	e.PUT("/debug", func(c echo.Context) error {
 		infra.LoggerLevel.SetLevel(zapcore.DebugLevel)
-		infra.HttpClient.EnableDumpAll()
+		httpClient.EnableDumpAll()
 		logger.Info("debug logging enabled")
 		return c.NoContent(http.StatusOK)
 	})
 
 	e.DELETE("/debug", func(c echo.Context) error {
 		infra.LoggerLevel.SetLevel(zapcore.InfoLevel)
-		infra.HttpClient.DisableDumpAll()
+		httpClient.DisableDumpAll()
 		logger.Info("debug logging disabled")
 		return c.NoContent(http.StatusOK)
 	})
@@ -59,15 +64,16 @@ func ProvideServer(application *Application) *Server {
 			Handler: e,
 			//ReadTimeout: 30 * time.Second, // customize http.Server timeouts
 		},
+		logger: logger,
 	}
 }
 
 func (s *Server) Run() {
-	logger.Infof("server running application")
+	s.logger.Infof("server running application")
 	go s.application.Run()
 
-	logger.Infof("server starts listening on port[%v]", os.Getenv("SERVER_PORT"))
+	s.logger.Infof("server starts listening on port[%v]", os.Getenv("SERVER_PORT"))
 	if err := s.server.ListenAndServe(); err != http.ErrServerClosed {
-		logger.Error(err)
+		s.logger.Error(err)
 	}
 }

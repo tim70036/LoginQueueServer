@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"errors"
+	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/msg"
 	"net"
 	"sync"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
+	"go.uber.org/zap"
 )
 
 const (
@@ -25,13 +27,19 @@ const (
 	closeGracePeriod = 3 * time.Second
 )
 
-type ClientFactory struct{}
-
-func ProvideClientFactory() *ClientFactory {
-	return &ClientFactory{}
+type ClientFactory struct {
+	hub           *Hub
+	loggerFactory *infra.LoggerFactory
 }
 
-func (f *ClientFactory) Create(c echo.Context, conn *websocket.Conn, hub *Hub) (*Client, error) {
+func ProvideClientFactory(hub *Hub, loggerFactory *infra.LoggerFactory) *ClientFactory {
+	return &ClientFactory{
+		hub:           hub,
+		loggerFactory: loggerFactory,
+	}
+}
+
+func (f *ClientFactory) Create(c echo.Context, conn *websocket.Conn) (*Client, error) {
 	if c.Request().Header.Get("id") == "" {
 		return nil, errors.New("no id in header")
 	}
@@ -47,7 +55,8 @@ func (f *ClientFactory) Create(c echo.Context, conn *websocket.Conn, hub *Hub) (
 		conn:          conn,
 		sendWsMessage: make(chan *msg.WsMessage, 64),
 		close:         make(chan []byte, 1),
-		hub:           hub,
+		hub:           f.hub,
+		logger:        f.loggerFactory.Create("Client[" + c.Request().Header.Get("id") + "]").Sugar(),
 	}, nil
 }
 
@@ -73,6 +82,8 @@ type Client struct {
 	closeOnce sync.Once
 
 	hub *Hub
+
+	logger *zap.SugaredLogger
 }
 
 func (c *Client) Run() {
@@ -113,7 +124,7 @@ func (c *Client) recvLoop() {
 	// timeout error and thus closing the connection.
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error {
-		logger.Debugf("receive pong id[%v]", c.id)
+		c.logger.Debugf("receive pong id[%v]", c.id)
 		c.conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
@@ -122,11 +133,11 @@ func (c *Client) recvLoop() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-				logger.Debugf("recv normal close message")
+				c.logger.Debugf("recv normal close message")
 			} else if err, ok := err.(net.Error); ok && err.Timeout() {
-				logger.Warnf("recv timeout %v", err) // Possibly heartbeat timeout.
+				c.logger.Warnf("recv timeout %v", err) // Possibly heartbeat timeout.
 			} else {
-				logger.Errorf("recv error %v", err)
+				c.logger.Errorf("recv error %v", err)
 			}
 
 			c.TryClose(true)
@@ -136,10 +147,10 @@ func (c *Client) recvLoop() {
 		wsMessage := &msg.WsMessage{}
 		err = json.Unmarshal(message, wsMessage)
 		if err != nil {
-			logger.Errorf("id[%v] message[%s] %v", c.id, message, err)
+			c.logger.Errorf("id[%v] message[%s] %v", c.id, message, err)
 			continue
 		}
-		logger.Debugf("received msg id[%v] eventCode[%v]", c.id, wsMessage.EventCode)
+		c.logger.Debugf("received msg id[%v] eventCode[%v]", c.id, wsMessage.EventCode)
 
 		c.hub.wsRequest <- &ClientRequest{
 			client:    c,
@@ -159,7 +170,7 @@ func (c *Client) sendLoop() {
 		case wsMessage := <-c.sendWsMessage:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteJSON(wsMessage); err != nil {
-				logger.Errorf("cannot write json to ws conn %v", err)
+				c.logger.Errorf("cannot write json to ws conn %v", err)
 				continue
 			}
 		case closeMessage := <-c.close:
@@ -169,14 +180,14 @@ func (c *Client) sendLoop() {
 
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.CloseMessage, closeMessage); err != nil {
-				logger.Errorf("cannot write close message to ws conn %v", err)
+				c.logger.Errorf("cannot write close message to ws conn %v", err)
 			}
 			return
 		case <-pingTicker.C:
-			logger.Debugf("send ping id[%v]", c.id)
+			c.logger.Debugf("send ping id[%v]", c.id)
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				logger.Errorf("cannot send ping to ws conn", err)
+				c.logger.Errorf("cannot send ping to ws conn", err)
 				continue
 			}
 		}
