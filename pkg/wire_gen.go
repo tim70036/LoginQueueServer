@@ -10,7 +10,8 @@ package main
 
 func Setup() *Server {
 	config := ProvideConfig()
-	queue := ProvideQueue(config)
+	stats := ProvideStats()
+	queue := ProvideQueue(stats, config)
 	hub := ProvideHub(queue)
 	application := ProvideApplication(config, hub, queue)
 	server := ProvideServer(application)

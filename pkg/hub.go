@@ -129,6 +129,7 @@ func (h *Hub) handleQueue() {
 				ActiveTickets: stats.activeTickets,
 				HeadPosition:  stats.headPosition,
 				TailPosition:  stats.tailPosition,
+				AvgWaitMsec:   stats.avgWaitDuration.Milliseconds(),
 			})
 			if err != nil {
 				logger.Errorf("cannot marshal QueueStatsServerEvent %v", err)

@@ -8,6 +8,11 @@ import (
 	"github.com/emirpasic/gods/maps/linkedhashmap"
 )
 
+const (
+	notifyStatsInterval = 5 * time.Second
+	dequeueInterval     = 15 * time.Second
+)
+
 type Queue struct {
 	// Enter queue request for a ticket from hub.
 	enter chan TicketId
@@ -40,21 +45,7 @@ type Queue struct {
 	config *Config
 }
 
-const (
-	notifyStatsInterval = 5 * time.Second
-	dequeueInterval     = 15 * time.Second
-)
-
-type Stats struct {
-	activeTickets int32
-	headPosition  int32
-	tailPosition  int32
-
-	// TODO
-	// avgWaitDuration      time.Duration
-}
-
-func ProvideQueue(config *Config) *Queue {
+func ProvideQueue(stats *Stats, config *Config) *Queue {
 	return &Queue{
 		enter:             make(chan TicketId, 1024),
 		leave:             make(chan TicketId, 1024),
@@ -62,8 +53,8 @@ func ProvideQueue(config *Config) *Queue {
 		notifyDirtyTicket: make(chan *Ticket, 1024),
 		notifyStats:       make(chan *Stats, 1024),
 		ticketQueue:       linkedhashmap.New(),
-		stats:             &Stats{},
 
+		stats:  stats,
 		config: config,
 	}
 }
@@ -100,7 +91,6 @@ func (q *Queue) queueWorker() {
 				logger.Infof("removed stale ticket[%+v]", ticket)
 			}
 			q.push(ticketId)
-			logger.Infof("inserted new ticket[%+v]", ticket)
 
 		case ticketId := <-q.leave:
 			logger.Debugf("leave ticketId[%+v]", ticketId)
@@ -132,7 +122,13 @@ func (q *Queue) queueWorker() {
 				q.pop(ticketId)
 				q.notifyFinish <- ticketId
 				slots--
-				logger.Infof("dequeue ticket[%+v]", ticket)
+
+				waitDuration := time.Since(ticket.createTime)
+				if q.stats.waitDurationQueue.Size() >= avgWaitWindowSize {
+					q.stats.waitDurationQueue.Dequeue()
+				}
+				q.stats.waitDurationQueue.Enqueue(waitDuration)
+				logger.Infof("dequeue ticket[%+v] waitDuration[%v]", ticket, waitDuration)
 			}
 
 			// Remove staled ticket from pool
@@ -147,10 +143,8 @@ func (q *Queue) queueWorker() {
 				logger.Infof("removed stale ticket[%+v]", ticket)
 			}
 
-			// TODO: remove this.
-			// q.dumpQueue()
-
-			// TODO: update wait time?
+			// Calculate avg wait time.
+			q.stats.updateAvgWait()
 		}
 	}
 }
@@ -196,6 +190,8 @@ func (q *Queue) push(ticketId TicketId) {
 		createTime: time.Now(),
 	}
 	q.ticketQueue.Put(ticketId, ticket)
+
+	logger.Infof("inserted new ticket[%+v]", ticket)
 }
 
 func (q *Queue) pop(ticketId TicketId) {

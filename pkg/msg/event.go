@@ -3,11 +3,10 @@ package msg
 type EventCode uint
 
 const (
-	LoginCode       EventCode = 0
-	FinishQueueCode EventCode = 1
-	NoQueueCode     EventCode = 2
-	QueueStatsCode  EventCode = 3
-	TicketCode      EventCode = 4
+	NoQueueCode    EventCode = 0
+	LoginCode      EventCode = 1
+	QueueStatsCode EventCode = 2
+	TicketCode     EventCode = 3
 )
 
 type LoginClientEvent struct {
@@ -20,9 +19,10 @@ type LoginServerEvent struct {
 }
 
 type QueueStatsServerEvent struct {
-	ActiveTickets int32 `json:"ActiveTickets"`
+	ActiveTickets int32 `json:"activeTickets"`
 	HeadPosition  int32 `json:"headPosition"`
 	TailPosition  int32 `json:"tailPosition"`
+	AvgWaitMsec   int64 `json:"avgWaitMsec"`
 }
 
 type TicketServerEvent struct {
