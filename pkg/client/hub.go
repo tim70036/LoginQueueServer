@@ -178,7 +178,7 @@ func (h *Hub) handleQueue() {
 }
 
 func (h *Hub) removeClient(client *Client) {
-	// TOOD: add lock
+	// TODO: add lock
 	h.clients.Remove(client.id)
 	h.loginDataCache.Remove(client.id)
 	client.TryClose(false) // Notify client it should close now.

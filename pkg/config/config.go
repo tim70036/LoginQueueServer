@@ -39,7 +39,6 @@ const (
 )
 
 func (c *Config) GetFreeSlots() uint {
-	// TODO: race condition?
 	if slots := c.OnlineUsersThreshold - c.OnlineUsers; slots > 0 {
 		return slots
 	}
