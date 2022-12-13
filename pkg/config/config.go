@@ -49,7 +49,6 @@ func (c *Config) GetFreeSlots() uint {
 func (c *Config) Run() {
 	ticker := time.NewTicker(cfgUpdateInterval)
 	for ; true; <-ticker.C {
-		// TODO: get data from redis and main server.
 		c.logger.Infof("updating config")
 
 		onlineResult := &struct {
@@ -60,9 +59,9 @@ func (c *Config) Run() {
 		}{}
 
 		resp, err := c.httpClient.R().
-			SetHeader("jwt", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiJhOGQyNTI2YS0yOGFhLTQ0OGQtYWJjZi1lYjAzMTgxZDNlOTMiLCJpYXQiOjE2NzA4MzIzOTR9.N8OdBi48YsMyBa7CQGVlqVE9YCz55AVCf9NORFxpOuM").
+			SetHeader("jtoken", os.Getenv("MAIN_SERVER_API_KEY")).
 			SetResult(onlineResult).
-			Get(os.Getenv("MAIN_SERVER_HOST") + "/api/user/online-users")
+			Get(os.Getenv("MAIN_SERVER_HOST") + "/queue/online-users")
 
 		if err != nil {
 			c.logger.Errorf("request failed %v", err)

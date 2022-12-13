@@ -7,10 +7,17 @@ import (
 	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/msg"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/queue"
+	"os"
+	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/imroc/req/v3"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
+)
+
+const (
+	sessionStalePeriod = 5 * time.Minute
 )
 
 type Application struct {
@@ -19,16 +26,18 @@ type Application struct {
 	hub           *client.Hub
 	queue         *queue.Queue
 	wsUpgrader    *websocket.Upgrader
+	httpClient    *req.Client
 	logger        *zap.SugaredLogger
 }
 
-func ProvideApplication(config *config.Config, clientFactory *client.ClientFactory, hub *client.Hub, queue *queue.Queue, loggerFactory *infra.LoggerFactory) *Application {
+func ProvideApplication(config *config.Config, clientFactory *client.ClientFactory, hub *client.Hub, queue *queue.Queue, httpClient *req.Client, loggerFactory *infra.LoggerFactory) *Application {
 	return &Application{
 		config:        config,
 		clientFactory: clientFactory,
 		hub:           hub,
 		queue:         queue,
 		wsUpgrader:    &websocket.Upgrader{},
+		httpClient:    httpClient,
 		logger:        loggerFactory.Create("Application").Sugar(),
 	}
 }
@@ -45,25 +54,19 @@ func (a *Application) HandleWs(c echo.Context) error {
 		return err
 	}
 
-	// TODO: Extract jwt and ask main server if need to place client in queue.
-	// Close connection right away if main server doesn't need to be in queue.
+	// Close connection right away if this client doesn't need to be
+	// in queue.
 	// 1. queue is disabled
-	// 2. client jwt's last heartbeat < 5 min or in game
+	// 2. client jwt's last heartbeat < 5 min or is in game
 	// 3. main server under maintenance
 	if !a.config.IsQueueEnabled {
-		rawEvent, _ := json.Marshal(nil)
-		wsMessage := &msg.WsMessage{
-			EventCode: msg.NoQueueCode,
-			EventData: rawEvent,
-		}
-		if err := conn.WriteJSON(wsMessage); err != nil {
-			a.logger.Errorf("cannot write json to ws conn %v", err)
-		}
+		a.rejectWs(conn)
+		return nil
+	}
 
-		if err := conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseTryAgainLater, "No need queue")); err != nil {
-			a.logger.Errorf("cannot write close message to ws conn %v", err)
-		}
-		conn.Close()
+	jwt := c.Request().Header.Get("jwt")
+	if needQueue := a.sessionNeedQueue(jwt); !needQueue {
+		a.rejectWs(conn)
 		return nil
 	}
 
@@ -80,4 +83,90 @@ func (a *Application) HandleWs(c echo.Context) error {
 	go client.Run()
 
 	return nil
+}
+
+func (a *Application) rejectWs(conn *websocket.Conn) {
+	rawEvent, _ := json.Marshal(nil)
+	wsMessage := &msg.WsMessage{
+		EventCode: msg.NoQueueCode,
+		EventData: rawEvent,
+	}
+	if err := conn.WriteJSON(wsMessage); err != nil {
+		a.logger.Errorf("cannot write json to ws conn %v", err)
+	}
+
+	if err := conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseTryAgainLater, "No need queue")); err != nil {
+		a.logger.Errorf("cannot write close message to ws conn %v", err)
+	}
+	conn.Close()
+}
+
+func (a *Application) sessionNeedQueue(jwt string) bool {
+
+	roomSessionResult := &struct {
+		Data struct {
+			IsInRoom bool   `json:"isInRoom"`
+			RoomId   string `json:"roomId"`
+		} `json:"data"`
+	}{}
+
+	resp, err := a.httpClient.R().
+		SetHeader("jwt", jwt).
+		SetResult(roomSessionResult).
+		Get(os.Getenv("MAIN_SERVER_HOST") + "/api/room/session")
+
+	if err != nil {
+		a.logger.Errorf("request failed %v", err)
+		return false
+	}
+
+	if resp.StatusCode == 503 {
+		a.logger.Debugf("no need que main server under maintenance")
+		return false
+	}
+
+	if resp.IsSuccess() && roomSessionResult.Data.IsInRoom {
+		a.logger.Debugf("no need que since client has roomSessionResult[%+v]", roomSessionResult)
+		return false
+	}
+
+	userSessionResult := &struct {
+		Data struct {
+			Uid             string `json:"uid"`
+			Jwt             string `json:"jwt"`
+			CreateTime      string `json:"createTime"`
+			LastHeartbeatIP string `json:"lastHeartbeatIP"`
+			LastHeartbeat   string `json:"lastHeartbeat"`
+		} `json:"data"`
+	}{}
+
+	resp, err = a.httpClient.R().
+		SetHeader("jwt", jwt).
+		SetResult(userSessionResult).
+		Get(os.Getenv("MAIN_SERVER_HOST") + "/api/user/session")
+
+	if err != nil {
+		a.logger.Errorf("request failed %v", err)
+		return false
+	}
+
+	if resp.StatusCode == 503 {
+		a.logger.Debugf("no need que main server under maintenance")
+		return false
+	}
+
+	if resp.IsSuccess() {
+		lastHeartbeatTime, err := time.Parse(time.RFC3339, userSessionResult.Data.LastHeartbeat)
+		if err != nil {
+			a.logger.Errorf("cannot parse lastHeartbeatTime from userSessionResult[%v] %v", userSessionResult, err)
+			return true
+		}
+
+		if time.Since(lastHeartbeatTime) < sessionStalePeriod {
+			a.logger.Debugf("no need que since client has userSessionResult[%+v]", userSessionResult)
+			return false
+		}
+	}
+
+	return true
 }

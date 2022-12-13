@@ -27,7 +27,7 @@ func Setup() (*Server, error) {
 	queueQueue := queue.ProvideQueue(stats, configConfig, loggerFactory)
 	hub := client.ProvideHub(queueQueue, reqClient, loggerFactory)
 	clientFactory := client.ProvideClientFactory(hub, loggerFactory)
-	application := ProvideApplication(configConfig, clientFactory, hub, queueQueue, loggerFactory)
+	application := ProvideApplication(configConfig, clientFactory, hub, queueQueue, reqClient, loggerFactory)
 	server := ProvideServer(application, reqClient, loggerFactory)
 	return server, nil
 }
