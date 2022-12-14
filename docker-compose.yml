@@ -7,6 +7,8 @@ services:
       SERVER_PORT: ${SERVER_PORT:?err}
       MAIN_SERVER_HOST: ${MAIN_SERVER_HOST:?err}
       MAIN_SERVER_API_KEY: ${MAIN_SERVER_API_KEY:?err}
+      TLS_PRIVATE_KEY_PATH: ${TLS_PRIVATE_KEY_PATH:?err}
+      TLS_CERT_PATH: ${TLS_CERT_PATH:?err}
     restart: unless-stopped
     logging:
       driver: json-file
@@ -18,7 +20,10 @@ services:
       - ${SERVER_PORT:?err}:${SERVER_PORT:?err}
     networks:
       - backend
-
+    volumes:
+      - type: bind
+        source: ./deploy
+        target: /deploy
 networks:
   backend:
     driver: bridge

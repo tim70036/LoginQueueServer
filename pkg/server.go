@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"net/http"
@@ -60,8 +61,9 @@ func ProvideServer(application *Application, httpClient *req.Client, loggerFacto
 	return &Server{
 		application: application,
 		server: &http.Server{
-			Addr:    fmt.Sprintf(":%v", os.Getenv("SERVER_PORT")),
-			Handler: e,
+			Addr:      fmt.Sprintf(":%v", os.Getenv("SERVER_PORT")),
+			Handler:   e,
+			TLSConfig: &tls.Config{},
 			//ReadTimeout: 30 * time.Second, // customize http.Server timeouts
 		},
 		logger: logger,
@@ -72,8 +74,11 @@ func (s *Server) Run() {
 	s.logger.Infof("server running application")
 	go s.application.Run()
 
-	s.logger.Infof("server starts listening on port[%v]", os.Getenv("SERVER_PORT"))
-	if err := s.server.ListenAndServe(); err != http.ErrServerClosed {
+	port := os.Getenv("SERVER_PORT")
+	tlsPrivateKeyPath := os.Getenv("TLS_PRIVATE_KEY_PATH")
+	tlsCertPath := os.Getenv("TLS_CERT_PATH")
+	s.logger.Infof("server starts listening on port[%v] with tlsPrivateKeyPath[%v] tlsCertPath[%v]", port, tlsPrivateKeyPath, tlsCertPath)
+	if err := s.server.ListenAndServeTLS(tlsCertPath, tlsPrivateKeyPath); err != http.ErrServerClosed {
 		s.logger.Error(err)
 	}
 }
