@@ -12,11 +12,11 @@ const (
 type LoginTypeCode uint
 
 const (
-	AppleLogin    LoginTypeCode = 0
-	DeviceLogin   LoginTypeCode = 1
-	FacebookLogin LoginTypeCode = 2
-	GoogleLogin   LoginTypeCode = 3
-	LineLogin     LoginTypeCode = 4
+	AppleLogin    LoginTypeCode = 1000
+	DeviceLogin   LoginTypeCode = 1001
+	FacebookLogin LoginTypeCode = 1002
+	GoogleLogin   LoginTypeCode = 1003
+	LineLogin     LoginTypeCode = 1004
 )
 
 type LoginClientEvent struct {
