@@ -3,21 +3,25 @@ package msg
 type EventCode uint
 
 const (
-	NoQueueCode    EventCode = 0
-	LoginCode      EventCode = 1
-	QueueStatsCode EventCode = 2
-	TicketCode     EventCode = 3
+	ShouldQueueCode EventCode = 1000
+	LoginCode       EventCode = 1001
+	QueueStatsCode  EventCode = 1002
+	TicketCode      EventCode = 1003
 )
 
 type LoginTypeCode uint
 
 const (
-	AppleLogin    LoginTypeCode = 1000
-	DeviceLogin   LoginTypeCode = 1001
-	FacebookLogin LoginTypeCode = 1002
-	GoogleLogin   LoginTypeCode = 1003
-	LineLogin     LoginTypeCode = 1004
+	FacebookLogin LoginTypeCode = 0
+	GoogleLogin   LoginTypeCode = 1
+	AppleLogin    LoginTypeCode = 2
+	LineLogin     LoginTypeCode = 3
+	DeviceLogin   LoginTypeCode = 4
 )
+
+type ShouldQueueEvent struct {
+	ShouldQueue bool `json:"shouldQueue"`
+}
 
 type LoginClientEvent struct {
 	Type  LoginTypeCode `json:"type"`

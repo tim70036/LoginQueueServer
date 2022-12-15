@@ -38,6 +38,6 @@ First, ensure that you are using a machine meeting the following requirements:
         TLS_CERT_PATH="deploy/certs/game-soul-swe.com/public.crt"
 
     ```
-2. Put in TLS certificate in `deploy/certs` directory. Remember to match the path you fill for `TLS_PRIVATE_KEY_PATH` and `TLS_CERT_PATH` for `.env`
+2. Put TLS certificate in `deploy/certs` directory. Remember to match the path you fill for `TLS_PRIVATE_KEY_PATH` and `TLS_CERT_PATH` for `.env`
 
 Finally, run `docker-compose build` and `docker-compose up -d` to run the tool.

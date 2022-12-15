@@ -24,7 +24,8 @@ const (
 	// Time allowed to read the next pong message from the peer.
 	pongWait = pingInterval * 5 / 2
 
-	closeGracePeriod = 3 * time.Second
+	// Grace time before shutting down ws connection.
+	CloseGracePeriod = 3 * time.Second
 )
 
 type ClientFactory struct {
@@ -108,8 +109,9 @@ func (c *Client) TryClose(isClosedByClient bool) {
 			c.hub.unregister <- c
 			c.close <- nil
 		} else {
+			time.Sleep(CloseGracePeriod) // Ensure that other message is sent.
 			c.close <- websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Closed by server")
-			time.Sleep(closeGracePeriod) // Ensure that close message is sent.
+			time.Sleep(CloseGracePeriod) // Ensure that close message is sent.
 		}
 
 		c.conn.Close()

@@ -72,6 +72,20 @@ func (h *Hub) handleClient() {
 			h.logger.Debugf("register client id[%v] ip[%v]", client.id, client.ip)
 			h.clients.Put(client.id, client)
 
+			rawEvent, err := json.Marshal(&msg.ShouldQueueEvent{
+				ShouldQueue: true,
+			})
+			if err != nil {
+				h.logger.Errorf("cannot marshal ShouldQueueEvent %v", err)
+				return
+			}
+
+			wsMessage := &msg.WsMessage{
+				EventCode: msg.ShouldQueueCode,
+				EventData: rawEvent,
+			}
+			client.sendWsMessage <- wsMessage
+
 		case client := <-h.unregister:
 			h.logger.Debugf("unregister client id[%v]", client.id)
 

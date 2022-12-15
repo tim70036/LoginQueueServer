@@ -60,23 +60,20 @@ func (a *Application) HandleWs(c echo.Context) error {
 	// 2. client jwt's last heartbeat < 5 min or is in game
 	// 3. main server under maintenance
 	if !a.config.IsQueueEnabled {
-		a.rejectWs(conn)
+		a.rejectWs(conn, websocket.CloseNormalClosure, "No need queue", true)
 		return nil
 	}
 
 	jwt := c.Request().Header.Get("jwt")
 	if needQueue := a.sessionNeedQueue(jwt); !needQueue {
-		a.rejectWs(conn)
+		a.rejectWs(conn, websocket.CloseNormalClosure, "No need queue", true)
 		return nil
 	}
 
 	client, err := a.clientFactory.Create(c, conn)
 	if err != nil {
 		a.logger.Errorf("cannot create client %v", err)
-		if err := conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseUnsupportedData, "")); err != nil {
-			a.logger.Errorf("cannot write close message to ws conn %v", err)
-		}
-		conn.Close()
+		a.rejectWs(conn, websocket.CloseUnsupportedData, err.Error(), false)
 		return nil
 	}
 
@@ -85,20 +82,32 @@ func (a *Application) HandleWs(c echo.Context) error {
 	return nil
 }
 
-func (a *Application) rejectWs(conn *websocket.Conn) {
-	rawEvent, _ := json.Marshal(nil)
-	wsMessage := &msg.WsMessage{
-		EventCode: msg.NoQueueCode,
-		EventData: rawEvent,
-	}
-	if err := conn.WriteJSON(wsMessage); err != nil {
-		a.logger.Errorf("cannot write json to ws conn %v", err)
+func (a *Application) rejectWs(conn *websocket.Conn, closeCode int, closeReason string, shouldSendEvent bool) {
+	if shouldSendEvent {
+		rawEvent, err := json.Marshal(&msg.ShouldQueueEvent{
+			ShouldQueue: false,
+		})
+		if err != nil {
+			a.logger.Errorf("cannot marshal ShouldQueueEvent %v", err)
+			return
+		}
+
+		wsMessage := &msg.WsMessage{
+			EventCode: msg.ShouldQueueCode,
+			EventData: rawEvent,
+		}
+		if err := conn.WriteJSON(wsMessage); err != nil {
+			a.logger.Errorf("cannot write json to ws conn %v", err)
+		}
 	}
 
-	if err := conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseTryAgainLater, "No need queue")); err != nil {
+	time.Sleep(client.CloseGracePeriod) // Ensure that other message is sent.
+	if err := conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(closeCode, closeReason)); err != nil {
 		a.logger.Errorf("cannot write close message to ws conn %v", err)
 	}
-	conn.Close()
+
+	time.Sleep(client.CloseGracePeriod)
+	conn.Close() // Ensure that close message is sent.
 }
 
 func (a *Application) sessionNeedQueue(jwt string) bool {
