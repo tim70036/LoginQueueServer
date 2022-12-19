@@ -101,3 +101,11 @@ From QueueStats and Ticket event, client will have three position data and deduc
 
 - How many tickets is in front of this client = `Ticket.position` - `QueueStats.headPosition`
 - How many tickets is in back of this client = `QueueStats.tailPosition` - `Ticket.position`
+
+# Inactive Ticket
+If a client disconnect or do not responds to server ping, the queue
+will set the client's ticket into `inactive` status. The client must
+reconnect within a time period. Otherwise, the ticket will be removed
+from queue and the client will get a new ticket even if he reconnect
+again with same `id`. This means he will have to wait from the head of
+the queue again.
