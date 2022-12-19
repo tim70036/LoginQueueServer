@@ -47,11 +47,11 @@ First, ensure that you are using a machine meeting the following requirements:
 Finally, run `docker-compose build` and `docker-compose up -d` to run the tool.
 
 ## API
-See document [api](docs/api.md)
+See document [api](./docs/api.md)
 
 ## Brief overview on Archictecture
 For more details, please read code comments.
-![arch](docs\arch.png)
+![arch](./docs/arch.png)
 
 ## Exploration of Golang Library
 This project also served as an expirimental project for us to explore

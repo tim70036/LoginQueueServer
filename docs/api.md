@@ -89,6 +89,11 @@ const (
 }
 ```
 
+# Debug API
+There are 2 http api that allows run-time debugging of this server:
+- PUT /debug: enables detail logging and dumps every outgoing http request.
+- DELETE /debug: disables the above feature. This is the default behavior.
+
 
 # Position
 
