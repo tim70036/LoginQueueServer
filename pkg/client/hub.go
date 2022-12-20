@@ -121,7 +121,7 @@ func (h *Hub) handleClient() {
 func (h *Hub) handleQueue() {
 	for {
 		select {
-		case ticket := <-h.queue.NotifyDirtyTicket:
+		case ticket := <-h.queue.NotifyTicket:
 			h.logger.Debugf("notifyDirtyTicket ticketId[%v]", ticket.TicketId)
 			value, ok := h.clients.Get(string(ticket.TicketId))
 			if !ok {

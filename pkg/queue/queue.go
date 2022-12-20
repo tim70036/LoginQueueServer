@@ -26,8 +26,8 @@ type Queue struct {
 	// Notify hub that a ticket is done queueing.
 	NotifyFinish chan TicketId
 
-	// Notify a ticket has changed its status.
-	NotifyDirtyTicket chan *Ticket
+	// Notify a ticket's data when the enter request is accepted by queue.
+	NotifyTicket chan *Ticket
 
 	// Notify current stats of the queue.
 	NotifyStats chan *Stats
@@ -51,12 +51,12 @@ type Queue struct {
 
 func ProvideQueue(stats *Stats, config *config.Config, loggerFactory *infra.LoggerFactory) *Queue {
 	return &Queue{
-		Enter:             make(chan TicketId, 1024),
-		Leave:             make(chan TicketId, 1024),
-		NotifyFinish:      make(chan TicketId, 1024),
-		NotifyDirtyTicket: make(chan *Ticket, 1024),
-		NotifyStats:       make(chan *Stats, 1024),
-		ticketQueue:       linkedhashmap.New(),
+		Enter:        make(chan TicketId, 1024),
+		Leave:        make(chan TicketId, 1024),
+		NotifyFinish: make(chan TicketId, 1024),
+		NotifyTicket: make(chan *Ticket, 1024),
+		NotifyStats:  make(chan *Stats, 1024),
+		ticketQueue:  linkedhashmap.New(),
 
 		stats:  stats,
 		config: config,
@@ -88,14 +88,16 @@ func (q *Queue) queueWorker() {
 				ticket = value.(*Ticket)
 				if !ticket.IsStale() {
 					ticket.isActive = true
-					ticket.isDirty = true
 					q.logger.Infof("set back to active ticket[%+v]", ticket)
+					q.NotifyTicket <- ticket
 					continue
 				}
 				q.ticketQueue.Remove(ticket.TicketId)
 				q.logger.Infof("removed stale ticket[%+v]", ticket)
 			}
-			q.push(ticketId)
+
+			ticket = q.push(ticketId)
+			q.NotifyTicket <- ticket
 
 		case ticketId := <-q.Leave:
 			q.logger.Debugf("leave ticketId[%+v]", ticketId)
@@ -160,31 +162,22 @@ func (q *Queue) statsWorker() {
 
 	for ; true; <-ticker.C {
 		q.NotifyStats <- q.stats
-
-		it := q.ticketQueue.Iterator()
-		for it.Begin(); it.Next(); {
-			_, ticket := it.Key().(TicketId), it.Value().(*Ticket)
-			if ticket.isDirty {
-				ticket.isDirty = false
-				q.NotifyDirtyTicket <- ticket
-			}
-		}
 	}
 }
 
-func (q *Queue) push(ticketId TicketId) {
+func (q *Queue) push(ticketId TicketId) *Ticket {
 	q.stats.incrTailPosition()
 
 	ticket := &Ticket{
 		TicketId:   ticketId,
 		Position:   q.stats.TailPosition,
 		isActive:   true,
-		isDirty:    true,
 		createTime: time.Now(),
 	}
 	q.ticketQueue.Put(ticketId, ticket)
 
 	q.logger.Infof("inserted new ticket[%+v]", ticket)
+	return ticket
 }
 
 func (q *Queue) pop(ticketId TicketId) {

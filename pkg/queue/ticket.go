@@ -15,9 +15,6 @@ type Ticket struct {
 	// True if client ws connection is still open. otherwise, false.
 	isActive bool
 
-	// True if ticket data has been modified since last sent to client.
-	isDirty bool
-
 	// The time when ticket is created.
 	createTime time.Time
 
