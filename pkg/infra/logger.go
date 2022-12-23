@@ -25,7 +25,7 @@ func ProvideLoggerFactory() *LoggerFactory {
 		Level:            LoggerLevel,
 		Development:      false,
 		Encoding:         "console",
-		OutputPaths:      []string{"stderr"},
+		OutputPaths:      []string{"stdout"},
 		ErrorOutputPaths: []string{"stderr"},
 		EncoderConfig: zapcore.EncoderConfig{
 			// Keys can be anything except the empty string.

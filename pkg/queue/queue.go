@@ -116,20 +116,22 @@ func (q *Queue) queueWorker() {
 			// inactive. If client is inactive and not stale, we will
 			// just skip him until next ticker. If he never comes
 			// back, will be removed due to stale.
-			slots := q.config.GetFreeSlots()
-			q.logger.Infof("dequeueing with slots[%v]", slots)
-
+			q.logger.Infof("dequeueing")
 			it := q.ticketQueue.Iterator()
 			var waitDurations []time.Duration
-			for it.Begin(); it.Next() && slots > 0; {
+			for it.Begin(); it.Next(); {
 				ticketId, ticket := it.Key().(TicketId), it.Value().(*Ticket)
 				if !ticket.isActive {
 					continue
 				}
 
+				if !q.config.TakeOneSlot() {
+					q.logger.Infof("all free slots has been taken")
+					break
+				}
+
 				q.pop(ticketId)
 				q.NotifyFinish <- ticketId
-				slots--
 
 				waitDuration := time.Since(ticket.createTime)
 				waitDurations = append(waitDurations, waitDuration)

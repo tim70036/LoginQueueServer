@@ -5,6 +5,7 @@ import (
 	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -16,6 +17,9 @@ type Config struct {
 	OnlineUsers          uint `redis:"onlineUsers"`
 	OnlineUsersThreshold uint `redis:"onlineUsersThreshold"`
 	IsQueueEnabled       bool `redis:"isQueueEnabled"`
+
+	FreeSlots     uint
+	freeSlotsLock sync.Mutex
 
 	redisClient *redis.Client
 	httpClient  *req.Client
@@ -32,17 +36,36 @@ func ProvideConfig(redisClient *redis.Client, httpClient *req.Client, loggerFact
 
 const (
 	// Update config with this interval.
-	cfgUpdateInterval = 30 * time.Second
+	cfgUpdateInterval = 5 * time.Second
 
 	// Config redis key.
 	cfgRedisKey = "config"
 )
 
-func (c *Config) GetFreeSlots() uint {
-	if slots := c.OnlineUsersThreshold - c.OnlineUsers; slots > 0 {
-		return slots
+func (c *Config) ReplenishFreeSlots() {
+	c.freeSlotsLock.Lock()
+	defer c.freeSlotsLock.Unlock()
+
+	var newFreeSlots uint = 0
+	if c.OnlineUsers < c.OnlineUsersThreshold {
+		newFreeSlots = c.OnlineUsersThreshold - c.OnlineUsers
 	}
-	return 0
+
+	c.FreeSlots = newFreeSlots
+
+	c.logger.Infof("replenish freeSlots[%v]", c.FreeSlots)
+}
+
+func (c *Config) TakeOneSlot() bool {
+	c.freeSlotsLock.Lock()
+	defer c.freeSlotsLock.Unlock()
+
+	if c.FreeSlots <= 0 {
+		return false
+	}
+
+	c.FreeSlots--
+	return true
 }
 
 func (c *Config) Run() {
@@ -74,22 +97,36 @@ func (c *Config) Run() {
 
 		c.logger.Infof("retrieved online user result[%+v]", onlineResult)
 
-		number, err := strconv.Atoi(onlineResult.Data.OnlineUsers)
+		newOnlineUsers, err := strconv.Atoi(onlineResult.Data.OnlineUsers)
 		if err != nil {
-			c.logger.Errorf("cannot parse online user number[%v] to int %v", number, err)
+			c.logger.Errorf("cannot parse online user number[%v] to int %v", newOnlineUsers, err)
 			continue
 		}
 
-		if _, err := c.redisClient.HSet(context.TODO(), cfgRedisKey, "onlineUsers", number).Result(); err != nil {
+		// Will skip if main server hasn't updated his online user
+		// number. We must do this in case that main server do not
+		// update frequently. In this case, queue server will dequeue
+		// too many users in a short period of time.
+		if newOnlineUsers == int(c.OnlineUsers) {
+			c.logger.Infof("skip update since onlineUsers not change config[%+v]", c)
+			continue
+		}
+
+		c.OnlineUsers = uint(newOnlineUsers)
+		c.ReplenishFreeSlots()
+
+		if _, err := c.redisClient.HSet(context.TODO(), cfgRedisKey,
+			"onlineUsers", c.OnlineUsers,
+		).Result(); err != nil {
 			c.logger.Errorf("err setting onlineUsers to redis %v", err)
 			continue
 		}
 
-		// TODO: remove this
-		if _, err := c.redisClient.HSet(context.TODO(), cfgRedisKey, "onlineUsersThreshold", number+1).Result(); err != nil {
-			c.logger.Errorf("err setting onlineUsersThreshold to redis %v", err)
-			continue
-		}
+		// TODO: remove this test code.
+		// if _, err := c.redisClient.HSet(context.TODO(), cfgRedisKey, "onlineUsersThreshold", number+1).Result(); err != nil {
+		// 	c.logger.Errorf("err setting onlineUsersThreshold to redis %v", err)
+		// 	continue
+		// }
 
 		if err := c.redisClient.HGetAll(context.TODO(), cfgRedisKey).Scan(c); err != nil {
 			c.logger.Errorf("err reading config from redis %v", err)
