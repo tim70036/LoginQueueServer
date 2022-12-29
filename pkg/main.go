@@ -1,15 +1,10 @@
 package main
 
 import (
-	"game-soul-technology/joker/joker-login-queue-server/pkg/infra"
 	"log"
-
-	"go.uber.org/zap/zapcore"
 )
 
 func main() {
-	// TODO: remove this
-	infra.LoggerLevel.SetLevel(zapcore.DebugLevel)
 
 	server, err := Setup()
 	if err != nil {
