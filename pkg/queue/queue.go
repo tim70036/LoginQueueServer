@@ -13,6 +13,7 @@ import (
 const (
 	notifyStatsInterval = 5 * time.Second
 	dequeueInterval     = 10 * time.Second
+	maxDequePerInterval = 500
 )
 
 type Queue struct {
@@ -117,6 +118,7 @@ func (q *Queue) queueWorker() {
 			// just skip him until next ticker. If he never comes
 			// back, will be removed due to stale.
 			q.logger.Infof("dequeueing")
+			ticketCnt := 0
 			it := q.ticketQueue.Iterator()
 			var waitDurations []time.Duration
 			for it.Begin(); it.Next(); {
@@ -125,8 +127,13 @@ func (q *Queue) queueWorker() {
 					continue
 				}
 
+				if ticketCnt >= maxDequePerInterval {
+					q.logger.Infof("dequeueing done, reach maxDequePerInterval[%v], dequeued ticketCnt[%v]", maxDequePerInterval, ticketCnt)
+					break
+				}
+
 				if !q.config.TakeOneSlot() {
-					q.logger.Infof("all free slots has been taken")
+					q.logger.Infof("dequeueing done, all free slots has been taken, dequeued ticketCnt[%v]", ticketCnt)
 					break
 				}
 
@@ -136,11 +143,13 @@ func (q *Queue) queueWorker() {
 				waitDuration := time.Since(ticket.createTime)
 				waitDurations = append(waitDurations, waitDuration)
 
-				q.logger.Infof("dequeue ticket[%+v] waitDuration[%v]", ticket, waitDuration)
+				q.logger.Debugf("dequeue ticket[%+v] waitDuration[%v]", ticket, waitDuration)
+				ticketCnt++
 			}
 
 			// Remove staled ticket from pool
 			q.logger.Infof("removing stale tickets")
+			ticketCnt = 0
 			for it.Begin(); it.Next(); {
 				ticketId, ticket := it.Key().(TicketId), it.Value().(*Ticket)
 				if !ticket.IsStale() {
@@ -148,8 +157,10 @@ func (q *Queue) queueWorker() {
 				}
 
 				q.pop(ticketId)
-				q.logger.Infof("removed stale ticket[%+v]", ticket)
+				q.logger.Debugf("removed stale ticket[%+v]", ticket)
+				ticketCnt++
 			}
+			q.logger.Infof("removing stale tickets done, removed ticketCnt[%v]", ticketCnt)
 
 			// Update stats.
 			q.stats.resetHeadPosition(q.ticketQueue)

@@ -13,7 +13,7 @@ import {
 // not using SharedArray here will mean that the code in the function call (that is what loads and
 // parses the json) will be executed per each VU which also means that there will be a complete copy
 // per each VU
-const userNum = 50000;
+const userNum = 10000;
 const wsHost = 'wss://login-queue-server.game-soul-swe.com:5487/ws';
 
 export const options = {
@@ -28,7 +28,7 @@ export const options = {
       executor: 'ramping-vus',
       startVUs: 1,
       stages: [
-        { duration: '5m', target: userNum }, // ramp up
+        { duration: '2m', target: userNum }, // ramp up
         { duration: '40m', target: userNum }, // stay
         { duration: '10s', target: 0 }, // scale down. (optional)
       ],
@@ -50,7 +50,7 @@ export default function () {
   // Setup
   const vuId = vu.idInTest - 1;
  
-  const res = ws.connect(wsHost, { headers: { id: uuidv4(), platform: 'Android' }}, function (socket) {
+  const res = ws.connect(wsHost, { headers: { id: vuId, platform: 'Android' }}, function (socket) {
     socket.on('open', () => {
       console.log(`ws connected vuId[${vuId}]`);
 
@@ -77,8 +77,8 @@ export default function () {
     });
 
     
-    // const sessionDuration = 6000000; // milisec
-    const sessionDuration = randomIntBetween(60000, 600000); // 1~10 min
+    const sessionDuration = 6000000; // milisec
+    // const sessionDuration = randomIntBetween(60000, 600000); // 1~10 min
     socket.setTimeout(function () {
         console.log(`ws closing vuId[${vuId}]`);
         socket.close();

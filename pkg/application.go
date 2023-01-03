@@ -103,7 +103,7 @@ func (a *Application) rejectWs(conn *websocket.Conn, closeCode int, closeReason 
 
 	time.Sleep(client.CloseGracePeriod) // Ensure that other message is sent.
 	if err := conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(closeCode, closeReason)); err != nil {
-		a.logger.Errorf("cannot write close message to ws conn %v", err)
+		a.logger.Debugf("cannot write close message to ws conn %v", err)
 	}
 
 	time.Sleep(client.CloseGracePeriod)

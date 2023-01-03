@@ -139,7 +139,7 @@ func (c *Client) recvLoop() {
 			} else if err, ok := err.(net.Error); ok && err.Timeout() {
 				c.logger.Warnf("recv timeout %v", err) // Possibly heartbeat timeout.
 			} else {
-				c.logger.Errorf("recv error %v", err)
+				c.logger.Debugf("recv error %v", err)
 			}
 
 			c.TryClose(true)
@@ -182,14 +182,14 @@ func (c *Client) sendLoop() {
 
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.CloseMessage, closeMessage); err != nil {
-				c.logger.Errorf("cannot write close message to ws conn %v", err)
+				c.logger.Debugf("cannot write close message to ws conn %v", err)
 			}
 			return
 		case <-pingTicker.C:
 			c.logger.Debugf("send ping id[%v]", c.id)
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				c.logger.Errorf("cannot send ping to ws conn", err)
+				c.logger.Debugf("cannot send ping to ws conn", err)
 				continue
 			}
 		}
