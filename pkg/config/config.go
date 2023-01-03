@@ -73,6 +73,11 @@ func (c *Config) Run() {
 	for ; true; <-ticker.C {
 		c.logger.Infof("updating config")
 
+		if err := c.redisClient.HGetAll(context.TODO(), cfgRedisKey).Scan(c); err != nil {
+			c.logger.Errorf("err reading config from redis %v", err)
+			continue
+		}
+
 		onlineResult := &struct {
 			Data struct {
 				OnlineUsers string `json:"onlineUsers"`

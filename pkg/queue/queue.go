@@ -12,7 +12,7 @@ import (
 
 const (
 	notifyStatsInterval = 5 * time.Second
-	dequeueInterval     = 15 * time.Second
+	dequeueInterval     = 10 * time.Second
 )
 
 type Queue struct {
@@ -163,6 +163,7 @@ func (q *Queue) statsWorker() {
 	defer ticker.Stop()
 
 	for ; true; <-ticker.C {
+		q.logger.Infof("current stats[%+v]", q.stats)
 		q.NotifyStats <- q.stats
 	}
 }

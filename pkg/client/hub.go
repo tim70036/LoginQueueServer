@@ -7,6 +7,7 @@ import (
 	"game-soul-technology/joker/joker-login-queue-server/pkg/msg"
 	"game-soul-technology/joker/joker-login-queue-server/pkg/queue"
 	"os"
+	"sync"
 
 	"github.com/emirpasic/gods/maps/hashmap"
 	"github.com/imroc/req/v3"
@@ -22,8 +23,11 @@ type Hub struct {
 	// Registered clients. Key value: client.id -> client.
 	clients *hashmap.Map
 
-	// Stores login request from clients. Key value: client.id -> client.
+	// Stores login request from clients. Key value: client.id -> login event.
 	loginDataCache *hashmap.Map
+
+	// Lock for protecting clients and loginDataCache maps.
+	mux sync.RWMutex
 
 	// Inbound messages from the clients.
 	broadcast chan []byte
@@ -70,7 +74,10 @@ func (h *Hub) handleClient() {
 		select {
 		case client := <-h.register:
 			h.logger.Debugf("register client id[%v] ip[%v]", client.id, client.ip)
+
+			h.mux.Lock()
 			h.clients.Put(client.id, client)
+			h.mux.Unlock()
 
 			rawEvent, err := json.Marshal(&msg.ShouldQueueEvent{
 				ShouldQueue: true,
@@ -89,7 +96,10 @@ func (h *Hub) handleClient() {
 		case client := <-h.unregister:
 			h.logger.Debugf("unregister client id[%v]", client.id)
 
+			h.mux.RLock()
 			_, ok := h.clients.Get(client.id)
+			h.mux.RUnlock()
+
 			if !ok {
 				continue
 			}
@@ -108,7 +118,11 @@ func (h *Hub) handleClient() {
 				}
 
 				h.logger.Debugf("storing event[%+v] into loginReqCache", event)
+
+				h.mux.Lock()
 				h.loginDataCache.Put(req.client.id, event)
+				h.mux.Unlock()
+
 				h.queue.Enter <- queue.TicketId(req.client.id)
 
 			default:
@@ -123,7 +137,11 @@ func (h *Hub) handleQueue() {
 		select {
 		case ticket := <-h.queue.NotifyTicket:
 			h.logger.Debugf("notifyDirtyTicket ticketId[%v]", ticket.TicketId)
+
+			h.mux.RLock()
 			value, ok := h.clients.Get(string(ticket.TicketId))
+			h.mux.RUnlock()
+
 			if !ok {
 				h.logger.Warnf("notifyDirtyTicket but cannot find client for ticketId[%v]", ticket.TicketId)
 				continue
@@ -163,21 +181,30 @@ func (h *Hub) handleQueue() {
 				EventData: rawEvent,
 			}
 
+			h.mux.RLock()
 			for _, value := range h.clients.Values() {
 				client := value.(*Client)
 				client.sendWsMessage <- wsMessage
 			}
+			h.mux.RUnlock()
 
 		case ticketId := <-h.queue.NotifyFinish:
 			h.logger.Debugf("notifyFinish ticketId[%v]", ticketId)
+
+			h.mux.RLock()
 			value, ok := h.clients.Get(string(ticketId))
+			h.mux.RUnlock()
+
 			if !ok {
 				h.logger.Warnf("notifyFinish but cannot find client for ticketId[%v]", ticketId)
 				continue
 			}
 			client := value.(*Client)
 
+			h.mux.RLock()
 			value, ok = h.loginDataCache.Get(string(ticketId))
+			h.mux.RUnlock()
+
 			if !ok {
 				h.logger.Warnf("notifyFinish but cannot find login request info for ticketId[%v]", ticketId)
 				continue
@@ -192,9 +219,11 @@ func (h *Hub) handleQueue() {
 }
 
 func (h *Hub) removeClient(client *Client) {
-	// TODO: add lock
+	h.mux.Lock()
 	h.clients.Remove(client.id)
 	h.loginDataCache.Remove(client.id)
+	h.mux.Unlock()
+
 	client.TryClose(false) // Notify client it should close now.
 }
 
