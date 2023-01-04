@@ -11,8 +11,12 @@ import (
 )
 
 const (
+	// Initial default value of wait duration.
 	initAvgWaitDuration = 3 * time.Minute
-	avgWaitWindowSize   = 50
+
+	// The size of sliding window for calculating average wait time of
+	// a ticket.
+	avgWaitWindowSize = 50
 )
 
 type Stats struct {

@@ -49,6 +49,37 @@ Finally, run `docker-compose build` and `docker-compose up -d` to run the tool.
 ## API
 See document [api](./docs/api.md)
 
+## Configuration
+You can modify the following costant in source code in to adjust login queue's behaviors:
+```
+    // A client will receive main server session after he finish login
+	// queue. He then can use this session to do anything he wants on
+	// main server. However, he has to stay online. If he goes offline
+	// over a period of time, he has to go into login queue again.
+	// This constant controls the time period.
+	sessionStalePeriod = 5 * time.Minute
+
+    // Queue behavior
+    notifyStatsInterval = 5 * time.Second
+	dequeueInterval     = 10 * time.Second
+	maxDequePerInterval = 500
+
+    // Initial default value of wait duration.
+	initAvgWaitDuration = 3 * time.Minute
+
+	// The size of sliding window for calculating average wait time of
+	// a ticket.
+	avgWaitWindowSize = 50
+
+    // After client is inactive for this period, ticket is viewed as
+	// stale and can be removed (not immediately removed). If client
+	// come back, he will have to wait from the start of the queue.
+	ticketStalePeriod = 5 * time.Minute
+
+    // Send pings to websocket peer with this interval.
+	pingInterval = 30 * time.Second
+```
+
 ## Brief overview on Archictecture
 For more details, please read code comments.
 ![arch](./docs/arch.png)

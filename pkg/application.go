@@ -17,6 +17,11 @@ import (
 )
 
 const (
+	// A client will receive main server session after he finish login
+	// queue. He then can use this session to do anything he wants on
+	// main server. However, he has to stay online. If he goes offline
+	// over a period of time, he has to go into login queue again.
+	// This constant controls the time period.
 	sessionStalePeriod = 5 * time.Minute
 )
 
