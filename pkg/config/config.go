@@ -14,9 +14,21 @@ import (
 )
 
 type Config struct {
-	OnlineUsers          uint `redis:"onlineUsers"`
+	// Current online users number from main server.
+	OnlineUsers uint `redis:"onlineUsers"`
+
+	// Max allowed online users number.
 	OnlineUsersThreshold uint `redis:"onlineUsersThreshold"`
-	IsQueueEnabled       bool `redis:"isQueueEnabled"`
+
+	// Percentage of OnlineUsersThreshold that will start queueing.
+	// For example, if OnlineUsersThreshold is 1000 and
+	// StartQueueThreshold is 80%, queue will start functioning when
+	// OnlineUsers reaches 1000 x 80% = 800. Will stop functioning
+	// when OnlineUsers drops below 800. Default to 100%.
+	StartQueueThreshold float32 `redis:"startQueueThreshold"`
+
+	// If false, will not queue no matter what.
+	IsQueueEnabled bool `redis:"isQueueEnabled"`
 
 	FreeSlots     uint
 	freeSlotsLock sync.Mutex
@@ -28,9 +40,10 @@ type Config struct {
 
 func ProvideConfig(redisClient *redis.Client, httpClient *req.Client, loggerFactory *infra.LoggerFactory) *Config {
 	return &Config{
-		redisClient: redisClient,
-		httpClient:  httpClient,
-		logger:      loggerFactory.Create("Config").Sugar(),
+		StartQueueThreshold: 1,
+		redisClient:         redisClient,
+		httpClient:          httpClient,
+		logger:              loggerFactory.Create("Config").Sugar(),
 	}
 }
 
@@ -41,6 +54,11 @@ const (
 	// Config redis key.
 	cfgRedisKey = "config"
 )
+
+func (c *Config) ShouldQueue() bool {
+	return c.IsQueueEnabled &&
+		(float32(c.OnlineUsers) >= float32(c.OnlineUsersThreshold)*c.StartQueueThreshold)
+}
 
 func (c *Config) ReplenishFreeSlots() {
 	c.freeSlotsLock.Lock()
@@ -77,6 +95,8 @@ func (c *Config) Run() {
 			c.logger.Errorf("err reading config from redis %v", err)
 			continue
 		}
+
+		c.logger.Infof("will queue if online users reach %+v", float32(c.OnlineUsersThreshold)*c.StartQueueThreshold)
 
 		onlineResult := &struct {
 			Data struct {

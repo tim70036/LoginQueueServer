@@ -62,9 +62,10 @@ func (a *Application) HandleWs(c echo.Context) error {
 	// Close connection right away if this client doesn't need to be
 	// in queue.
 	// 1. queue is disabled
+	// 2. queue is enabled, but current online users has not reach threshold.
 	// 2. client jwt's last heartbeat < 5 min or is in game
 	// 3. main server under maintenance
-	if !a.config.IsQueueEnabled {
+	if !a.config.ShouldQueue() {
 		a.rejectWs(conn, websocket.CloseNormalClosure, "No need queue", true)
 		return nil
 	}
