@@ -24,4 +24,4 @@ WORKDIR /
 
 COPY --from=build /app/build/server /server
 RUN ls -al
-CMD ["/server"]
+ENTRYPOINT ["/server"]
