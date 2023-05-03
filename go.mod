@@ -1,6 +1,6 @@
 module game-soul-technology/joker/joker-login-queue-server
 
-go 1.19
+go 1.20
 
 require (
 	github.com/emirpasic/gods v1.18.1
