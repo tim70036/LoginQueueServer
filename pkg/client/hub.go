@@ -261,10 +261,12 @@ func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, client *Client, re
 		} `json:"data"`
 	}{}
 
-	// TODO hwo to send client IP
+	// TODO how to send client IP
 	resp, err := h.httpClient.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("platform", client.platform).
+		SetHeader("deviceid", loginData.DeviceId).
+		SetHeader("sessionid", loginData.SessionId).
 		SetBody(payload).
 		SetResult(authData).
 		Post(url)

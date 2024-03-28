@@ -24,8 +24,10 @@ type ShouldQueueEvent struct {
 }
 
 type LoginClientEvent struct {
-	Type  LoginTypeCode `json:"type"`
-	Token string        `json:"token"`
+	Type      LoginTypeCode `json:"type"`
+	Token     string        `json:"token"`
+	DeviceId  string        `json:"deviceId"`
+	SessionId string        `json:"sessionId"`
 }
 
 type LoginServerEvent struct {
