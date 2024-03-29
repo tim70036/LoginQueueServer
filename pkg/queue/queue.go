@@ -12,7 +12,7 @@ import (
 
 const (
 	notifyStatsInterval = 5 * time.Second
-	dequeueInterval     = 10 * time.Second
+	dequeueInterval     = 2 * time.Second
 	maxDequePerInterval = 500
 )
 
