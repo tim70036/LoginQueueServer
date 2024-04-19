@@ -1,4 +1,5 @@
 # joker-login-queue-server
+
 A queue server written in Golang that queue client login requests to
 avoid main server outrage. If user traffic surges, we need to protect
 our main server. Queue server will read the user number that are
@@ -23,6 +24,7 @@ First, ensure that you are using a machine meeting the following requirements:
 - Chill enough.
 
 ## Installation
+
 1. Set credential in the file `.env` and place it in project root
    directory. This file is read by docker compose:
     ```
@@ -42,15 +44,19 @@ First, ensure that you are using a machine meeting the following requirements:
         TLS_CERT_PATH="deploy/certs/game-soul-swe.com/public.crt"
 
     ```
-2. Put TLS certificate in `deploy/certs` directory. Remember to match the path you fill for `TLS_PRIVATE_KEY_PATH` and `TLS_CERT_PATH` for `.env`
+2. Put TLS certificate in `deploy/certs` directory. Remember to match the path you fill for `TLS_PRIVATE_KEY_PATH`
+   and `TLS_CERT_PATH` for `.env`
 
 Finally, run `docker-compose build` and `docker-compose up -d` to run the tool.
 
 ## API
+
 See document [api](./docs/api.md)
 
 ## Configuration
+
 You can modify the following costant in source code in to adjust login queue's behaviors:
+
 ```
     // A client will receive main server session after he finish login
 	// queue. He then can use this session to do anything he wants on
@@ -81,12 +87,15 @@ You can modify the following costant in source code in to adjust login queue's b
 ```
 
 ## Brief overview on Archictecture
+
 For more details, please read code comments.
 ![arch](./docs/arch.png)
 
 ## Exploration of Golang Library
+
 This project also served as an expirimental project for us to explore
 golang's feature and related framework:
+
 - Dependency Injection [wire](github.com/google/wire)
 - HTTP [echo](github.com/labstack/echo/v4)
 - Websocket [gorilla websocket](github.com/gorilla/websocket)
@@ -95,6 +104,7 @@ golang's feature and related framework:
 - Redis [redis](github.com/go-redis/redis/v8)
 
 ## Performance Test
+
 Performance testing is important for this kind of server, since its
 primary mission is to hold large amount of traffic that other server
 cannot. We use [k6](https://k6.io/) to simulate large amount of client
@@ -103,10 +113,12 @@ code can be found under `test` folder. In conclusion, the server can
 handle at least **50000 CCU**.
 
 ### Machine Instance
+
 We deployed our server on a c6g.2xlarge AWS EC2 instance. This type of
 machine has 8vCPU and 16GB RAM.
 
 ### Simple Test
+
 In this case, each client will connect to login queue server and
 request login. After that, every client just hang there and the login queue does
 not dequeue any ticket (no free slot). The whole test runs for 10~15 mins.
@@ -119,6 +131,7 @@ not dequeue any ticket (no free slot). The whole test runs for 10~15 mins.
 ![](./docs/simple-50000CCU-2xlarge.png)
 
 ### Dequeue Test
+
 50000 client connection and server perdiocally deque
 5000 clients and perform login for them. These dequeued clients will
 connect back and request login again. Thus, CCU remains 50000 during
@@ -126,11 +139,13 @@ the test.
 ![](./docs/dequeue-50000CCU-2xlarge.png)
 
 ### Reconnect Test
+
 50000 clients and each of them has a random session duration (1~10
 min). After session ends, they will disconnect and reconnect again.
 ![](./docs/reconnect-50000CCU-2xlarge.png)
 
 ### Large DAU Test (Soak Test)
+
 Same as Reconnect Test, but each client will provide an unique id when
 reconnecting. Thus, the server will view each client connection as
 different user. The session duration is also shorten to 1~3 min. The

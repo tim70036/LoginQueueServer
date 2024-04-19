@@ -31,7 +31,8 @@ type LoginClientEvent struct {
 }
 
 type LoginServerEvent struct {
-	Jwt string `json:"jwt"`
+	StatusCode int    `json:"statusCode"`
+	Jwt        string `json:"jwt"`
 }
 
 type QueueStatsServerEvent struct {

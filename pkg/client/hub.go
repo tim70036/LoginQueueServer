@@ -211,7 +211,7 @@ func (h *Hub) handleQueue() {
 			}
 			loginData := value.(*msg.LoginClientEvent)
 
-			authResult := make(chan string)
+			authResult := make(chan *msg.LoginServerEvent)
 			go h.loginForClient(loginData, client, authResult)
 			go h.finishClient(client, authResult)
 		}
@@ -227,7 +227,7 @@ func (h *Hub) removeClient(client *Client) {
 	client.TryClose(false) // Notify client it should close now.
 }
 
-func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, client *Client, result chan<- string) {
+func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, client *Client, result chan<- *msg.LoginServerEvent) {
 	defer close(result)
 
 	var (
@@ -268,7 +268,7 @@ func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, client *Client, re
 		SetHeader("deviceid", loginData.DeviceId).
 		SetHeader("sessionid", loginData.SessionId).
 		SetBody(payload).
-		SetResult(authData).
+		SetSuccessResult(authData).
 		Post(url)
 
 	if err != nil {
@@ -276,27 +276,31 @@ func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, client *Client, re
 		return
 	}
 
-	if resp.IsError() {
-		h.logger.Errorf("request failed with status[%v]", resp.Status)
-		return
+	if resp.IsErrorState() {
+		h.logger.Errorf("login failed with http status[%v]", resp.Status)
+		result <- &msg.LoginServerEvent{
+			StatusCode: resp.StatusCode,
+			Jwt:        "",
+		}
+	} else {
+		h.logger.Infof("login success for id[%v]", client.id)
+		result <- &msg.LoginServerEvent{
+			StatusCode: resp.StatusCode,
+			Jwt:        authData.Data.Jwt,
+		}
 	}
-
-	h.logger.Infof("login success for id[%v]", client.id)
-	result <- authData.Data.Jwt
 }
 
-func (h *Hub) finishClient(client *Client, result <-chan string) {
+func (h *Hub) finishClient(client *Client, result <-chan *msg.LoginServerEvent) {
 	defer h.removeClient(client)
 
-	jwt, ok := <-result
+	event, ok := <-result
 	if !ok {
-		h.logger.Warnf("cannot get login credential from closed channel")
+		h.logger.Warnf("cannot get login data from closed channel")
 		return
 	}
 
-	rawEvent, err := json.Marshal(&msg.LoginServerEvent{
-		Jwt: jwt,
-	})
+	rawEvent, err := json.Marshal(event)
 	if err != nil {
 		h.logger.Errorf("cannot marshal LoginServerEvent %v", err)
 		return
