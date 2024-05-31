@@ -292,8 +292,6 @@ func (h *Hub) loginForClient(loginData *msg.LoginClientEvent, client *Client, re
 }
 
 func (h *Hub) finishClient(client *Client, result <-chan *msg.LoginServerEvent) {
-	defer h.removeClient(client)
-
 	event, ok := <-result
 	if !ok {
 		h.logger.Warnf("cannot get login data from closed channel")
@@ -309,5 +307,9 @@ func (h *Hub) finishClient(client *Client, result <-chan *msg.LoginServerEvent) 
 	client.sendWsMessage <- &msg.WsMessage{
 		EventCode: msg.LoginCode,
 		EventData: rawEvent,
+	}
+
+	if event.StatusCode == 200 {
+		h.removeClient(client)
 	}
 }
