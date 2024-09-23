@@ -22,3 +22,6 @@
 
 *.env
 *.key
+
+# IntelliJ
+.idea

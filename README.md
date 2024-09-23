@@ -1,10 +1,10 @@
-# joker-login-queue-server
+# login-queue-server
 
-A queue server written in Golang that queue client login requests to
+An in-memory queue server written in Golang that queue client login requests to
 avoid main server outrage. If user traffic surges, we need to protect
 our main server. Queue server will read the user number that are
 currently on main server and decide how much new user can login to
-main server by dequeueing certain number of login requests out from
+main server by dequeue certain number of login requests out from
 its queue. Works similar like a [token
 bucket](https://en.wikipedia.org/wiki/Token_bucket).
 
@@ -12,7 +12,7 @@ It uses websocket protocol to communicate with frontend client and
 http request additional data from main server. However, since queue
 server stores client info in server-side memory, it's not possible to
 scale this queue server to multiple machines. This is left for future
-peformance optimization (**Not that easy**, would require centralized
+performance optimization (**Not that easy**, would require centralized
 message queue such as RabbitMQ).
 
 ## Prerequisites
@@ -55,7 +55,7 @@ See document [api](./docs/api.md)
 
 ## Configuration
 
-You can modify the following costant in source code in to adjust login queue's behaviors:
+You can modify the following constant in source code in to adjust login queue's behaviors:
 
 ```
     // A client will receive main server session after he finish login
@@ -86,14 +86,14 @@ You can modify the following costant in source code in to adjust login queue's b
 	pingInterval = 30 * time.Second
 ```
 
-## Brief overview on Archictecture
+## Brief overview on Architecture
 
 For more details, please read code comments.
 ![arch](./docs/arch.png)
 
 ## Exploration of Golang Library
 
-This project also served as an expirimental project for us to explore
+This project also served as an experimental project for us to explore
 golang's feature and related framework:
 
 - Dependency Injection [wire](github.com/google/wire)
