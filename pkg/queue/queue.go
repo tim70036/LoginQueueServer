@@ -10,12 +10,6 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	notifyStatsInterval = 5 * time.Second
-	dequeueInterval     = 2 * time.Second
-	maxDequePerInterval = 500
-)
-
 type Queue struct {
 	// Enter queue request for a ticket from hub.
 	Enter chan TicketId
@@ -47,10 +41,12 @@ type Queue struct {
 
 	config *config.Config
 
+	queueConfig *config.QueueConfig
+
 	logger *zap.SugaredLogger
 }
 
-func ProvideQueue(stats *Stats, config *config.Config, loggerFactory *infra.LoggerFactory) *Queue {
+func ProvideQueue(stats *Stats, config *config.Config, queueConfig *config.QueueConfig, loggerFactory *infra.LoggerFactory) *Queue {
 	return &Queue{
 		Enter:        make(chan TicketId, 1024),
 		Leave:        make(chan TicketId, 1024),
@@ -59,9 +55,10 @@ func ProvideQueue(stats *Stats, config *config.Config, loggerFactory *infra.Logg
 		NotifyStats:  make(chan *Stats, 1024),
 		ticketQueue:  linkedhashmap.New(),
 
-		stats:  stats,
-		config: config,
-		logger: loggerFactory.Create("Queue").Sugar(),
+		stats:       stats,
+		config:      config,
+		queueConfig: queueConfig,
+		logger:      loggerFactory.Create("Queue").Sugar(),
 	}
 }
 
@@ -74,7 +71,7 @@ func (q *Queue) Run() {
 // that will access them. Scaling is way harder. If use redis, have to
 // consider multiple login queue worker is reading redis queue.
 func (q *Queue) queueWorker() {
-	ticker := time.NewTicker(dequeueInterval)
+	ticker := time.NewTicker(time.Duration(*q.config.DequeueIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -87,7 +84,7 @@ func (q *Queue) queueWorker() {
 				// if it's stale, so new ticket can be inserted into
 				// start of the queue.
 				ticket = value.(*Ticket)
-				if !ticket.IsStale() {
+				if !q.IsTicketStale(ticket) {
 					ticket.isActive = true
 					q.logger.Infof("set back to active ticket[%+v]", ticket)
 					q.NotifyTicket <- ticket
@@ -127,12 +124,12 @@ func (q *Queue) queueWorker() {
 					continue
 				}
 
-				if ticketCnt >= maxDequePerInterval {
-					q.logger.Infof("dequeueing done, reach maxDequePerInterval[%v], dequeued ticketCnt[%v]", maxDequePerInterval, ticketCnt)
+				if ticketCnt >= *q.config.MaxDequeuePerInterval {
+					q.logger.Infof("dequeueing done, reach maxDequePerInterval[%v], dequeued ticketCnt[%v]", *q.config.MaxDequeuePerInterval, ticketCnt)
 					break
 				}
 
-				if !q.config.TakeOneSlot() {
+				if !q.queueConfig.TakeOneSlot() {
 					q.logger.Infof("dequeueing done, all free slots has been taken, dequeued ticketCnt[%v]", ticketCnt)
 					break
 				}
@@ -152,7 +149,7 @@ func (q *Queue) queueWorker() {
 			ticketCnt = 0
 			for it.Begin(); it.Next(); {
 				ticketId, ticket := it.Key().(TicketId), it.Value().(*Ticket)
-				if !ticket.IsStale() {
+				if !q.IsTicketStale(ticket) {
 					continue
 				}
 
@@ -170,7 +167,7 @@ func (q *Queue) queueWorker() {
 }
 
 func (q *Queue) statsWorker() {
-	ticker := time.NewTicker(notifyStatsInterval)
+	ticker := time.NewTicker(time.Duration(*q.config.NotifyStatsIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 
 	for ; true; <-ticker.C {
@@ -206,4 +203,10 @@ func (q *Queue) dumpQueue() {
 		ticketData = ticketData + fmt.Sprintf("ticket[%+v]\n", ticket)
 	}
 	q.logger.Debugf("ticketQueue:\n\n" + ticketData + "\n\n")
+}
+
+func (q *Queue) IsTicketStale(t *Ticket) bool {
+	return !t.isActive &&
+		!t.inactiveTime.IsZero() &&
+		t.inactiveTime.Before(time.Now().Add(-time.Duration(*q.config.TicketStaleSeconds)*time.Second))
 }

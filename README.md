@@ -1,12 +1,12 @@
 # login-queue-server
 
 An in-memory queue server written in Golang that queue client login requests to
-avoid main server outrage. If user traffic surges, we need to protect
+make sure main server is handling the desired number of client at any time. Works similar like a [token
+bucket](https://en.wikipedia.org/wiki/Token_bucket). If user traffic surges, we need to protect
 our main server. Queue server will read the user number that are
 currently on main server and decide how much new user can login to
 main server by dequeue certain number of login requests out from
-its queue. Works similar like a [token
-bucket](https://en.wikipedia.org/wiki/Token_bucket).
+its queue.
 
 It uses websocket protocol to communicate with frontend client and
 http request additional data from main server. However, since queue
@@ -26,24 +26,49 @@ First, ensure that you are using a machine meeting the following requirements:
 ## Installation
 
 1. Set credential in the file `.env` and place it in project root
-   directory. This file is read by docker compose:
-    ```
-        // Port of the queue server.
-        SERVER_PORT="5487" 
+   directory. You can also modify the following settings to adjust login queue's behaviors This file is read by docker
+   compose:
+   ```
+   // Port of the queue server.
+   SERVER_PORT="5487" 
+   
+   // Queue server need a redis instance to store data.
+   REDIS_HOST="host.docker.internal:8787" 
+   REDIS_DB="0"
+   
+   // The main server host and required api key to make request.
+   MAIN_SERVER_HOST="http://host.docker.internal:8888" 
+   MAIN_SERVER_API_KEY="d7153da6-aa6f-4a7b-9c30-a9fc92708bae"
+   
+   // Queue server tls certificate
+   TLS_PRIVATE_KEY_PATH="deploy/certs/game-soul-swe.com/private.key" 
+   TLS_CERT_PATH="deploy/certs/game-soul-swe.com/public.crt"
+   
+   // The number of seconds before a session is considered stale. If client goes offline over this period of time, he has to go into login queue again.
+   SESSION_STALE_SECONDS=300    
+   
+   // After client is inactive for this period, ticket is viewed as stale and can be removed (not immediately removed). If client come back, he will have to wait from the start of the queue.
+   TICKET_STALE_SECONDS=300
+   
+   // Interval to notify stats to client.
+   NOTIFY_STATS_INTERVAL_SECONDS=5
+   
+   // Interval to dequeue tickets.
+   DEQUEUE_INTERVAL_SECONDS=10
+   
+   // Maximum number of tickets that can be dequeued per interval.
+   MAX_DEQUEUE_PER_INTERVAL=500
+   
+   // Initial default value of wait duration.
+   INIT_AVG_WAIT_SECONDS=180  
+   
+   // The size of sliding window for calculating average wait time of a ticket.
+   AVERAGE_WAIT_WINDOW_SIZE=50
+   
+   // Send pings to websocket peer with this interval.    
+   PING_INTERVAL_SECONDS=30
+   ```
 
-        // Queue server need a redis instance to store data.
-        REDIS_HOST="host.docker.internal:8787" 
-        REDIS_DB="0"
-
-        // The main server host and required api key to make request.
-        MAIN_SERVER_HOST="http://host.docker.internal:8888" 
-        MAIN_SERVER_API_KEY="d7153da6-aa6f-4a7b-9c30-a9fc92708bae"
-
-        // Queue server tls certificate
-        TLS_PRIVATE_KEY_PATH="deploy/certs/game-soul-swe.com/private.key" 
-        TLS_CERT_PATH="deploy/certs/game-soul-swe.com/public.crt"
-
-    ```
 2. Put TLS certificate in `deploy/certs` directory. Remember to match the path you fill for `TLS_PRIVATE_KEY_PATH`
    and `TLS_CERT_PATH` for `.env`
 
@@ -52,39 +77,6 @@ Finally, run `docker-compose build` and `docker-compose up -d` to run the tool.
 ## API
 
 See document [api](./docs/api.md)
-
-## Configuration
-
-You can modify the following constant in source code in to adjust login queue's behaviors:
-
-```
-    // A client will receive main server session after he finish login
-	// queue. He then can use this session to do anything he wants on
-	// main server. However, he has to stay online. If he goes offline
-	// over a period of time, he has to go into login queue again.
-	// This constant controls the time period.
-	sessionStalePeriod = 5 * time.Minute
-
-    // Queue behavior
-    notifyStatsInterval = 5 * time.Second
-	dequeueInterval     = 10 * time.Second
-	maxDequePerInterval = 500
-
-    // Initial default value of wait duration.
-	initAvgWaitDuration = 3 * time.Minute
-
-	// The size of sliding window for calculating average wait time of
-	// a ticket.
-	avgWaitWindowSize = 50
-
-    // After client is inactive for this period, ticket is viewed as
-	// stale and can be removed (not immediately removed). If client
-	// come back, he will have to wait from the start of the queue.
-	ticketStalePeriod = 5 * time.Minute
-
-    // Send pings to websocket peer with this interval.
-	pingInterval = 30 * time.Second
-```
 
 ## Brief overview on Architecture
 

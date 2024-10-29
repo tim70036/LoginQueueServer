@@ -16,17 +16,9 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	// A client will receive main server session after he finish login
-	// queue. He then can use this session to do anything he wants on
-	// main server. However, he has to stay online. If he goes offline
-	// over a period of time, he has to go into login queue again.
-	// This constant controls the time period.
-	sessionStalePeriod = 5 * time.Minute
-)
-
 type Application struct {
 	config        *config.Config
+	queueConfig   *config.QueueConfig
 	clientFactory *client.ClientFactory
 	hub           *client.Hub
 	queue         *queue.Queue
@@ -35,9 +27,10 @@ type Application struct {
 	logger        *zap.SugaredLogger
 }
 
-func ProvideApplication(config *config.Config, clientFactory *client.ClientFactory, hub *client.Hub, queue *queue.Queue, httpClient *req.Client, loggerFactory *infra.LoggerFactory) *Application {
+func ProvideApplication(config *config.Config, queueConfig *config.QueueConfig, clientFactory *client.ClientFactory, hub *client.Hub, queue *queue.Queue, httpClient *req.Client, loggerFactory *infra.LoggerFactory) *Application {
 	return &Application{
 		config:        config,
+		queueConfig:   queueConfig,
 		clientFactory: clientFactory,
 		hub:           hub,
 		queue:         queue,
@@ -48,7 +41,7 @@ func ProvideApplication(config *config.Config, clientFactory *client.ClientFacto
 }
 
 func (a *Application) Run() {
-	go a.config.Run()
+	go a.queueConfig.Run()
 	go a.hub.Run()
 	go a.queue.Run()
 }
@@ -65,7 +58,7 @@ func (a *Application) HandleWs(c echo.Context) error {
 	// 2. queue is enabled, but current online users has not reach threshold.
 	// 2. client jwt's last heartbeat < 5 min or is in game
 	// 3. main server under maintenance
-	if !a.config.ShouldQueue() {
+	if !a.queueConfig.ShouldQueue() {
 		a.rejectWs(conn, websocket.CloseNormalClosure, "No need queue", true)
 		return nil
 	}
@@ -177,7 +170,12 @@ func (a *Application) sessionNeedQueue(jwt string) bool {
 			return true
 		}
 
-		if time.Since(lastHeartbeatTime) < sessionStalePeriod {
+		// A client will receive main server session after he finishes login
+		// queue. He then can use this session to do anything he wants on
+		// main server. However, he has to stay online. If he goes offline
+		// over a period of time, he has to go into login queue again.
+		// This constant controls the time period.
+		if time.Since(lastHeartbeatTime) < time.Duration(*a.config.SessionStaleSeconds)*time.Second {
 			a.logger.Debugf("no need que since client has userSessionResult[%+v]", userSessionResult)
 			return false
 		}

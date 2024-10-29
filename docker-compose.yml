@@ -9,6 +9,15 @@ services:
       MAIN_SERVER_API_KEY: ${MAIN_SERVER_API_KEY:?err}
       TLS_PRIVATE_KEY_PATH: ${TLS_PRIVATE_KEY_PATH:?err}
       TLS_CERT_PATH: ${TLS_CERT_PATH:?err}
+    command:
+      - --session-stale-seconds=${SESSION_STALE_SECONDS:?err}
+      - --ticket-stale-seconds=${TICKET_STALE_SECONDS:?err}
+      - --notify-stats-interval-seconds=${NOTIFY_STATS_INTERVAL_SECONDS:?err}
+      - --dequeue-interval-seconds=${DEQUEUE_INTERVAL_SECONDS:?err}
+      - --max-dequeue-per-interval=${MAX_DEQUEUE_PER_INTERVAL:?err}
+      - --init-avg-wait-seconds=${INIT_AVG_WAIT_SECONDS:?err}
+      - --average-wait-window-size=${AVERAGE_WAIT_WINDOW_SIZE:?err}
+      - --ping-interval-seconds=${PING_INTERVAL_SECONDS:?err}
     restart: unless-stopped
     logging:
       driver: json-file

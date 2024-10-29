@@ -16,18 +16,23 @@ import (
 // Injectors from wire.go:
 
 func Setup() (*Server, error) {
+	configConfig := _wireConfigValue
 	loggerFactory := infra.ProvideLoggerFactory()
 	redisClient, err := infra.ProvideRedisClient(loggerFactory)
 	if err != nil {
 		return nil, err
 	}
 	reqClient := infra.ProvideHttpClient()
-	configConfig := config.ProvideConfig(redisClient, reqClient, loggerFactory)
-	stats := queue.ProvideStats(loggerFactory)
-	queueQueue := queue.ProvideQueue(stats, configConfig, loggerFactory)
+	queueConfig := config.ProvideQueueConfig(redisClient, reqClient, loggerFactory)
+	stats := queue.ProvideStats(configConfig, loggerFactory)
+	queueQueue := queue.ProvideQueue(stats, configConfig, queueConfig, loggerFactory)
 	hub := client.ProvideHub(queueQueue, reqClient, loggerFactory)
 	clientFactory := client.ProvideClientFactory(hub, loggerFactory)
-	application := ProvideApplication(configConfig, clientFactory, hub, queueQueue, reqClient, loggerFactory)
+	application := ProvideApplication(configConfig, queueConfig, clientFactory, hub, queueQueue, reqClient, loggerFactory)
 	server := ProvideServer(application, reqClient, loggerFactory)
 	return server, nil
 }
+
+var (
+	_wireConfigValue = config.CFG
+)
